@@ -97,31 +97,48 @@ class CustomLogoutView(LogoutView):
 
 
 def home(request):
-    """Optimized home page with fast redirects"""
-    if request.user.is_authenticated:
-        # Quick admin email check
-        if request.user.email == 'sammyseth260@gmail.com' and request.user.role != 'admin':
-            request.user.role = 'admin'
-            request.user.is_staff = True
-            request.user.is_superuser = True
-            request.user.is_promoted_admin = True
-            request.user.save()
+    """Optimized home page with fast redirects and comprehensive error handling"""
+    try:
+        if request.user.is_authenticated:
+            # Quick admin email check with error handling
+            if request.user.email == 'sammyseth260@gmail.com' and request.user.role != 'admin':
+                try:
+                    request.user.role = 'admin'
+                    request.user.is_staff = True
+                    request.user.is_superuser = True
+                    request.user.is_promoted_admin = True
+                    request.user.save()
+                    logger.info(f"Auto-promoted {request.user.username} to admin")
+                except Exception as e:
+                    logger.error(f"Error auto-promoting admin: {str(e)}")
+            
+            # Fast role-based redirect with validation
+            if hasattr(request.user, 'role') and request.user.role:
+                role_redirects = {
+                    'borrower': 'borrower_dashboard',
+                    'lender': 'marketplace', 
+                    'agent': 'agent_panel',
+                    'admin': 'admin_dashboard'
+                }
+                redirect_url = role_redirects.get(request.user.role)
+                if redirect_url:
+                    try:
+                        return redirect(redirect_url)
+                    except Exception as e:
+                        logger.error(f"Redirect error for role {request.user.role}: {str(e)}")
+                        messages.error(request, f'Error accessing {request.user.role} dashboard. Please try again.')
+            else:
+                messages.error(request, 'Account not configured properly. Contact support.')
+                # Log the user out if account is not properly configured
+                from django.contrib.auth import logout
+                logout(request)
         
-        # Fast role-based redirect
-        if hasattr(request.user, 'role') and request.user.role:
-            role_redirects = {
-                'borrower': 'borrower_dashboard',
-                'lender': 'marketplace', 
-                'agent': 'agent_panel',
-                'admin': 'admin_dashboard'
-            }
-            redirect_url = role_redirects.get(request.user.role)
-            if redirect_url:
-                return redirect(redirect_url)
-        else:
-            messages.error(request, 'Account not configured. Contact support.')
-    
-    return render(request, 'core/home.html')
+        return render(request, 'core/home.html')
+        
+    except Exception as e:
+        logger.error(f"Home view error: {str(e)}")
+        messages.error(request, 'System error. Please try again.')
+        return render(request, 'core/home.html')
 
 
 def register(request):
@@ -488,16 +505,24 @@ def marketplace(request):
 
 
 @login_required
-@login_required
 def loan_detail(request, loan_id):
-    """Detailed view of a specific loan with proper error handling"""
+    """Detailed view of a specific loan with comprehensive error handling and redirects"""
     try:
         # Get loan with all details from Supabase
         loan = supabase_service.get_loan_with_details(loan_id)
         
         if not loan:
             messages.error(request, 'Loan not found.')
-            return redirect('marketplace')
+            # Smart redirect based on user role
+            if hasattr(request.user, 'role'):
+                role_redirects = {
+                    'borrower': 'borrower_dashboard',
+                    'lender': 'marketplace',
+                    'agent': 'agent_panel',
+                    'admin': 'admin_dashboard'
+                }
+                return redirect(role_redirects.get(request.user.role, 'home'))
+            return redirect('home')
         
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
@@ -505,21 +530,29 @@ def loan_detail(request, loan_id):
             messages.error(request, 'User session error. Please login again.')
             return redirect('login')
         
-        # Check permissions
+        # Check permissions with detailed access control
         borrower_id = loan.get('borrower_id')
         user_role = current_user.get('role')
         user_id = current_user.get('id')
         
-        if (user_id != borrower_id and user_role not in ['agent', 'lender', 'admin']):
-            messages.error(request, 'Access denied.')
-            # Redirect based on user role
+        # Allow access for: loan owner, agents, lenders, and admins
+        has_access = (
+            user_id == borrower_id or  # Loan owner
+            user_role in ['agent', 'admin'] or  # Agents and admins
+            (user_role == 'lender' and loan.get('status') in ['listed', 'active'])  # Lenders for listed/active loans
+        )
+        
+        if not has_access:
+            messages.error(request, 'Access denied. You do not have permission to view this loan.')
+            # Redirect based on user role with fallback
             role_redirects = {
                 'borrower': 'borrower_dashboard',
                 'lender': 'marketplace',
                 'agent': 'agent_panel',
                 'admin': 'admin_dashboard'
             }
-            return redirect(role_redirects.get(user_role, 'home'))
+            redirect_url = role_redirects.get(user_role, 'home')
+            return redirect(redirect_url)
         
         # Get investments for this loan
         investments = supabase_service.get_investments_by_loan(loan_id) or []
@@ -530,63 +563,152 @@ def loan_detail(request, loan_id):
             if lender:
                 investment['lender'] = lender
         
+        # Add additional loan context
+        loan['can_invest'] = (
+            user_role == 'lender' and 
+            loan.get('status') == 'listed' and 
+            float(loan.get('funded_amount', 0)) < float(loan.get('principal_amount', 0))
+        )
+        
+        loan['is_owner'] = (user_id == borrower_id)
+        loan['is_admin'] = (user_role == 'admin')
+        
         context = {
             'loan': loan,
             'investments': investments,
+            'user_role': user_role,
         }
         return render(request, 'core/loan_detail.html', context)
         
     except Exception as e:
-        logger.error(f"Loan detail error: {str(e)}")
-        messages.error(request, 'Error loading loan details.')
-        return redirect('marketplace')
+        logger.error(f"Loan detail error for loan {loan_id}: {str(e)}")
+        messages.error(request, 'Error loading loan details. Please try again.')
+        
+        # Smart redirect on error
+        if hasattr(request.user, 'role'):
+            role_redirects = {
+                'borrower': 'borrower_dashboard',
+                'lender': 'marketplace',
+                'agent': 'agent_panel',
+                'admin': 'admin_dashboard'
+            }
+            return redirect(role_redirects.get(request.user.role, 'home'))
+        return redirect('home')
 
 
-@login_required
 @login_required
 def admin_dashboard(request):
-    """Admin dashboard with access to all system data"""
+    """Admin dashboard with comprehensive error handling and data validation"""
     try:
-        # Get current user from Supabase
+        # Get current user from Supabase with validation
         current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+        if not current_user:
+            messages.error(request, 'User session error. Please login again.')
+            return redirect('login')
+        
+        # Strict admin access control
+        is_admin = (
+            current_user.get('role') == 'admin' or 
+            current_user.get('email') == 'sammyseth260@gmail.com'
+        )
+        
+        if not is_admin:
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('home')
         
-        # Get dashboard statistics from Supabase
-        stats = supabase_service.get_dashboard_stats()
+        # Get dashboard statistics with error handling
+        try:
+            stats = supabase_service.get_dashboard_stats()
+        except Exception as e:
+            logger.error(f"Error getting dashboard stats: {str(e)}")
+            stats = {
+                'total_users': 0, 'total_borrowers': 0, 'total_lenders': 0, 
+                'total_agents': 0, 'total_loans': 0, 'active_loans': 0, 
+                'listed_loans': 0, 'total_investments': 0, 
+                'total_funded_amount': 0, 'total_loan_amount': 0
+            }
+            messages.warning(request, 'Some dashboard statistics may not be current.')
         
-        # Get recent activities
-        all_loans = supabase_service.get_all_loans() or []
-        all_investments = supabase_service.get_all_investments() or []
-        all_users = supabase_service.get_all_users() or []
+        # Get recent activities with error handling
+        try:
+            all_loans = supabase_service.get_all_loans() or []
+            all_investments = supabase_service.get_all_investments() or []
+            all_users = supabase_service.get_all_users() or []
+        except Exception as e:
+            logger.error(f"Error getting recent activities: {str(e)}")
+            all_loans = []
+            all_investments = []
+            all_users = []
+            messages.warning(request, 'Recent activities may not be current.')
         
-        # Sort and limit recent activities
-        recent_loans = sorted(all_loans, key=lambda x: x.get('created_at', ''), reverse=True)[:10]
-        recent_investments = sorted(all_investments, key=lambda x: x.get('date', ''), reverse=True)[:10]
-        recent_users = sorted(all_users, key=lambda x: x.get('created_at', ''), reverse=True)[:10]
+        # Sort and limit recent activities safely
+        try:
+            recent_loans = sorted(
+                all_loans, 
+                key=lambda x: x.get('created_at', ''), 
+                reverse=True
+            )[:10]
+            recent_investments = sorted(
+                all_investments, 
+                key=lambda x: x.get('date', ''), 
+                reverse=True
+            )[:10]
+            recent_users = sorted(
+                all_users, 
+                key=lambda x: x.get('created_at', ''), 
+                reverse=True
+            )[:10]
+        except Exception as e:
+            logger.error(f"Error sorting recent activities: {str(e)}")
+            recent_loans = all_loans[:10] if all_loans else []
+            recent_investments = all_investments[:10] if all_investments else []
+            recent_users = all_users[:10] if all_users else []
         
-        # Enrich recent loans with details
+        # Enrich recent loans with details safely
         enriched_recent_loans = []
         for loan in recent_loans:
-            loan_details = supabase_service.get_loan_with_details(loan['id'])
-            if loan_details:
-                enriched_recent_loans.append(loan_details)
+            try:
+                loan_details = supabase_service.get_loan_with_details(loan['id'])
+                if loan_details:
+                    enriched_recent_loans.append(loan_details)
+            except Exception as e:
+                logger.error(f"Error enriching loan {loan.get('id')}: {str(e)}")
+                # Add basic loan info if enrichment fails
+                enriched_recent_loans.append(loan)
         
-        # Enrich recent investments with details
+        # Enrich recent investments with details safely
         enriched_recent_investments = []
         for investment in recent_investments:
-            # Get lender details
-            lender = supabase_service.get_user_by_id(investment.get('lender_id'))
-            loan = supabase_service.get_loan_by_id(investment.get('loan_id'))
-            if lender and loan:
-                investment['lender'] = lender
-                investment['loan'] = loan
+            try:
+                # Get lender details
+                lender = supabase_service.get_user_by_id(investment.get('lender_id'))
+                loan = supabase_service.get_loan_by_id(investment.get('loan_id'))
+                if lender and loan:
+                    investment['lender'] = lender
+                    investment['loan'] = loan
+                    enriched_recent_investments.append(investment)
+                else:
+                    # Add basic investment info if enrichment fails
+                    enriched_recent_investments.append(investment)
+            except Exception as e:
+                logger.error(f"Error enriching investment {investment.get('id')}: {str(e)}")
                 enriched_recent_investments.append(investment)
         
-        # Get collateral statistics
-        pending_collaterals = supabase_service.get_pending_collaterals() or []
-        all_collaterals = supabase_service.get_all_collaterals() or []
+        # Get collateral statistics safely
+        try:
+            pending_collaterals = supabase_service.get_pending_collaterals() or []
+            all_collaterals = supabase_service.get_all_collaterals() or []
+        except Exception as e:
+            logger.error(f"Error getting collateral stats: {str(e)}")
+            pending_collaterals = []
+            all_collaterals = []
+        
+        # Calculate pending loans safely
+        pending_loans_count = 0
+        try:
+            pending_loans_count = len([l for l in all_loans if l.get('status') == 'pending_collateral'])
+        except Exception as e:
+            logger.error(f"Error calculating pending loans: {str(e)}")
         
         context = {
             'total_users': stats.get('total_users', 0),
@@ -599,7 +721,7 @@ def admin_dashboard(request):
             'total_loans': stats.get('total_loans', 0),
             'active_loans': stats.get('active_loans', 0),
             'listed_loans': stats.get('listed_loans', 0),
-            'pending_loans': len([l for l in all_loans if l.get('status') == 'pending_collateral']),
+            'pending_loans': pending_loans_count,
             'total_investments': stats.get('total_investments', 0),
             'total_invested_amount': stats.get('total_funded_amount', 0),
             'recent_loans': enriched_recent_loans,
@@ -611,8 +733,8 @@ def admin_dashboard(request):
         return render(request, 'core/admin_dashboard.html', context)
         
     except Exception as e:
-        logger.error(f"Admin dashboard error: {str(e)}")
-        messages.error(request, 'Error loading admin dashboard.')
+        logger.error(f"Admin dashboard critical error: {str(e)}")
+        messages.error(request, 'Error loading admin dashboard. Please try again.')
         return redirect('home')
 
 

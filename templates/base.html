@@ -366,29 +366,77 @@
             });
         });
         
-        // Fast navigation handling
+        // Optimized navigation handling
         document.addEventListener('click', function(e) {
             const link = e.target.closest('a[href]');
             if (link && !link.getAttribute('href').startsWith('#') && 
                 !link.getAttribute('href').startsWith('javascript:') &&
-                !link.getAttribute('href').includes('logout')) {
+                !link.getAttribute('href').includes('logout') &&
+                !link.hasAttribute('target')) {
+                
+                const href = link.getAttribute('href');
                 // Only show loader for internal navigation
-                if (link.hostname === window.location.hostname) {
+                if (href.startsWith('/') || link.hostname === window.location.hostname) {
                     showGlobalLoader('Loading...');
+                    
+                    // Auto-hide loader after 5 seconds as fallback
+                    setTimeout(() => {
+                        hideGlobalLoader();
+                    }, 5000);
                 }
             }
         });
         
-        // Hide loader on page load
-        window.addEventListener('load', hideGlobalLoader);
+        // Improved page load handling
+        window.addEventListener('load', function() {
+            hideGlobalLoader();
+            // Mark page as fully loaded
+            document.body.classList.add('page-loaded');
+        });
         
-        // Hide loader on back/forward navigation
+        // Enhanced back/forward navigation handling
         window.addEventListener('pageshow', function(event) {
             hideGlobalLoader();
+            
+            // Handle browser back/forward button
             if (event.persisted) {
-                // Page was loaded from cache, refresh if needed
-                console.log('Page loaded from cache');
+                // Page was loaded from cache (back/forward navigation)
+                console.log('Page loaded from browser cache');
+                // Force refresh of dynamic content if needed
+                const dynamicElements = document.querySelectorAll('[data-refresh-on-back]');
+                dynamicElements.forEach(el => {
+                    if (el.dataset.refreshUrl) {
+                        // Refresh specific elements
+                        fetch(el.dataset.refreshUrl)
+                            .then(response => response.text())
+                            .then(html => {
+                                el.innerHTML = html;
+                            })
+                            .catch(console.error);
+                    }
+                });
             }
+        });
+        
+        // Handle browser back button specifically
+        window.addEventListener('popstate', function(event) {
+            hideGlobalLoader();
+            console.log('Browser back/forward button used');
+        });
+        
+        // Prevent multiple form submissions
+        let formSubmitting = false;
+        document.addEventListener('submit', function(e) {
+            if (formSubmitting) {
+                e.preventDefault();
+                return false;
+            }
+            formSubmitting = true;
+            
+            // Reset flag after 3 seconds
+            setTimeout(() => {
+                formSubmitting = false;
+            }, 3000);
         });
     </script>
     
