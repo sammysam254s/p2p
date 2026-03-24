@@ -213,7 +213,7 @@ def register(request):
 
 @login_required
 def borrower_dashboard(request):
-    """Enhanced borrower dashboard with KYC requirement and loan management"""
+    """Fast borrower dashboard without complex caching"""
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
@@ -407,7 +407,7 @@ def agent_panel(request):
 
 @login_required
 def marketplace(request):
-    """Enhanced lender marketplace with detailed loan information"""
+    """Fast lender marketplace without complex caching"""
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
@@ -449,6 +449,52 @@ def marketplace(request):
                 elif investment_amount <= 0:
                     messages.error(request, 'Investment amount must be greater than zero.')
                 elif investment_amount < 100:
+                    messages.error(request, 'Minimum investment amount is KES 100.')
+                else:
+                    # Create investment
+                    investment = Investment.objects.create(
+                        lender=request.user,
+                        loan=loan,
+                        amount_invested=investment_amount,
+                        expected_return=investment_amount * Decimal('0.13')  # 13% return
+                    )
+                    
+                    # Update loan funded amount
+                    loan.funded_amount += investment_amount
+                    
+                    # Check if loan is fully funded
+                    if loan.funded_amount >= loan.principal_amount:
+                        loan.status = 'active'
+                        loan.activate_loan()
+                        
+                        # Generate updated contract PDF
+                        pdf_generator.save_contract_pdf(loan)
+                        
+                        messages.success(request, f'Loan fully funded! KES {investment_amount:,.2f} invested successfully.')
+                    else:
+                        messages.success(request, f'KES {investment_amount:,.2f} invested successfully.')
+                    
+                    loan.save()
+            
+                return redirect('marketplace')
+                
+            except Loan.DoesNotExist:
+                messages.error(request, 'Loan not found or not available for investment.')
+            except Exception as e:
+                logger.error(f"Investment error: {str(e)}")
+                messages.error(request, 'Error processing investment. Please try again.')
+        
+        # Get lender's investments
+        lender_investments = Investment.objects.filter(lender=request.user).select_related('loan')
+        total_invested = sum(inv.amount_invested for inv in lender_investments)
+        
+        context = {
+            'listed_loans': valid_loans,
+            'lender_investments': lender_investments,
+            'total_invested': total_invested,
+            'is_admin': user_role == 'admin',  # Add admin flag for template
+        }
+        return render(request, 'core/marketplace.html', context)
                     messages.error(request, 'Minimum investment amount is KES 100.')
                 else:
                     # Check if lender already invested in this loan
@@ -601,9 +647,9 @@ def loan_detail(request, loan_id):
 
 @login_required
 def admin_dashboard(request):
-    """Admin dashboard with comprehensive error handling and data validation"""
+    """Fast admin dashboard without complex caching"""
     try:
-        # Get current user from Supabase with validation
+        # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
         if not current_user:
             messages.error(request, 'User session error. Please login again.')
@@ -632,61 +678,42 @@ def admin_dashboard(request):
             }
             messages.warning(request, 'Some dashboard statistics may not be current.')
         
-        # Get recent activities with error handling
+        # Get recent activities using Django ORM for speed
         try:
-            all_loans = supabase_service.get_all_loans() or []
-            all_investments = supabase_service.get_all_investments() or []
-            all_users = supabase_service.get_all_users() or []
+            recent_loans = list(Loan.objects.select_related('borrower', 'collateral')
+                              .order_by('-created_at')[:10])
+            recent_investments = list(Investment.objects.select_related('lender', 'loan')
+                                    .order_by('-date')[:10])
+            recent_users = list(CustomUser.objects.order_by('-date_joined')[:10])
         except Exception as e:
             logger.error(f"Error getting recent activities: {str(e)}")
-            all_loans = []
-            all_investments = []
-            all_users = []
+            recent_loans = []
+            recent_investments = []
+            recent_users = []
             messages.warning(request, 'Recent activities may not be current.')
         
-        # Sort and limit recent activities safely
-        try:
-            recent_loans = sorted(
-                all_loans, 
-                key=lambda x: x.get('created_at', ''), 
-                reverse=True
-            )[:10]
-            recent_investments = sorted(
-                all_investments, 
-                key=lambda x: x.get('date', ''), 
-                reverse=True
-            )[:10]
-            recent_users = sorted(
-                all_users, 
-                key=lambda x: x.get('created_at', ''), 
-                reverse=True
-            )[:10]
-        except Exception as e:
-            logger.error(f"Error sorting recent activities: {str(e)}")
-            recent_loans = all_loans[:10] if all_loans else []
-            recent_investments = all_investments[:10] if all_investments else []
-            recent_users = all_users[:10] if all_users else []
+        context = {
+            'total_users': stats.get('total_users', 0),
+            'total_borrowers': stats.get('total_borrowers', 0),
+            'total_lenders': stats.get('total_lenders', 0),
+            'total_agents': stats.get('total_agents', 0),
+            'total_loans': stats.get('total_loans', 0),
+            'active_loans': stats.get('active_loans', 0),
+            'listed_loans': stats.get('listed_loans', 0),
+            'total_investments': stats.get('total_investments', 0),
+            'total_funded_amount': stats.get('total_funded_amount', 0),
+            'total_loan_amount': stats.get('total_loan_amount', 0),
+            'recent_loans': recent_loans,
+            'recent_investments': recent_investments,
+            'recent_users': recent_users,
+        }
         
-        # Enrich recent loans with details safely
-        enriched_recent_loans = []
-        for loan in recent_loans:
-            try:
-                loan_details = supabase_service.get_loan_with_details(loan['id'])
-                if loan_details:
-                    enriched_recent_loans.append(loan_details)
-            except Exception as e:
-                logger.error(f"Error enriching loan {loan.get('id')}: {str(e)}")
-                # Add basic loan info if enrichment fails
-                enriched_recent_loans.append(loan)
+        return render(request, 'core/admin_dashboard.html', context)
         
-        # Enrich recent investments with details safely
-        enriched_recent_investments = []
-        for investment in recent_investments:
-            try:
-                # Get lender details
-                lender = supabase_service.get_user_by_id(investment.get('lender_id'))
-                loan = supabase_service.get_loan_by_id(investment.get('loan_id'))
-                if lender and loan:
+    except Exception as e:
+        logger.error(f"Admin dashboard error: {str(e)}")
+        messages.error(request, 'Error loading admin dashboard.')
+        return redirect('home')
                     investment['lender'] = lender
                     investment['loan'] = loan
                     enriched_recent_investments.append(investment)

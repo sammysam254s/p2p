@@ -30,17 +30,19 @@ class SupabaseClient:
             elif method == 'PATCH':
                 response = requests.patch(url, headers=self.headers, json=data)
             elif method == 'DELETE':
-                response = requests.delete(url, headers=self.headers, params=params)
+                response = requests.delete(url, headers=self.headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
             
             response.raise_for_status()
             return response.json() if response.content else None
             
         except requests.exceptions.RequestException as e:
-            print(f"Supabase API Error: {e}")
+            print(f"Supabase request error: {e}")
             return None
     
     def select(self, table, columns="*", filters=None, order=None, limit=None):
-        """Select data from table"""
+        """Select data from table - simplified without caching for now"""
         params = {'select': columns}
         
         if filters:
@@ -119,17 +121,17 @@ class SupabaseUserService:
         return self.client.insert('users', user_data)
     
     def get_user_by_username(self, username):
-        """Get user by username"""
+        """Get user by username - simplified without caching for now"""
         result = self.client.select('users', filters={'username': username})
         return result[0] if result else None
     
     def get_user_by_email(self, email):
-        """Get user by email"""
+        """Get user by email - simplified without caching for now"""
         result = self.client.select('users', filters={'email': email})
         return result[0] if result else None
     
     def get_user_by_id(self, user_id):
-        """Get user by ID"""
+        """Get user by ID - simplified without caching for now"""
         result = self.client.select('users', filters={'id': user_id})
         return result[0] if result else None
     
