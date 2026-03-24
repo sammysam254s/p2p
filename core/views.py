@@ -663,61 +663,8 @@ def admin_dashboard(request):
         logger.error(f"Admin dashboard error: {str(e)}")
         messages.error(request, 'Error loading admin dashboard.')
         return redirect('home')
-                    investment['lender'] = lender
-                    investment['loan'] = loan
-                    enriched_recent_investments.append(investment)
-                else:
-                    # Add basic investment info if enrichment fails
-                    enriched_recent_investments.append(investment)
-            except Exception as e:
-                logger.error(f"Error enriching investment {investment.get('id')}: {str(e)}")
-                enriched_recent_investments.append(investment)
-        
-        # Get collateral statistics safely
-        try:
-            pending_collaterals = supabase_service.get_pending_collaterals() or []
-            all_collaterals = supabase_service.get_all_collaterals() or []
-        except Exception as e:
-            logger.error(f"Error getting collateral stats: {str(e)}")
-            pending_collaterals = []
-            all_collaterals = []
-        
-        # Calculate pending loans safely
-        pending_loans_count = 0
-        try:
-            pending_loans_count = len([l for l in all_loans if l.get('status') == 'pending_collateral'])
-        except Exception as e:
-            logger.error(f"Error calculating pending loans: {str(e)}")
-        
-        context = {
-            'total_users': stats.get('total_users', 0),
-            'total_borrowers': stats.get('total_borrowers', 0),
-            'total_lenders': stats.get('total_lenders', 0),
-            'total_agents': stats.get('total_agents', 0),
-            'total_collateral': len(all_collaterals),
-            'pending_collateral': len(pending_collaterals),
-            'verified_collateral': len(all_collaterals) - len(pending_collaterals),
-            'total_loans': stats.get('total_loans', 0),
-            'active_loans': stats.get('active_loans', 0),
-            'listed_loans': stats.get('listed_loans', 0),
-            'pending_loans': pending_loans_count,
-            'total_investments': stats.get('total_investments', 0),
-            'total_invested_amount': stats.get('total_funded_amount', 0),
-            'recent_loans': enriched_recent_loans,
-            'recent_investments': enriched_recent_investments,
-            'recent_users': recent_users,
-            'total_loan_amount': stats.get('total_loan_amount', 0),
-            'total_funded_amount': stats.get('total_funded_amount', 0),
-        }
-        return render(request, 'core/admin_dashboard.html', context)
-        
-    except Exception as e:
-        logger.error(f"Admin dashboard critical error: {str(e)}")
-        messages.error(request, 'Error loading admin dashboard. Please try again.')
-        return redirect('home')
 
 
-@login_required
 @login_required
 def admin_borrower_view(request):
     """Admin view of borrower dashboard"""
