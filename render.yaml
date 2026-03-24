@@ -2,7 +2,7 @@ services:
   - type: web
     name: p2p-secure-lend
     env: python
-    buildCommand: "./build.sh"
+    buildCommand: "bash build.sh"
     startCommand: "gunicorn secure_lend.wsgi:application"
     envVars:
       - key: PYTHON_VERSION
