@@ -5,8 +5,9 @@ from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
 from decimal import Decimal
-from .models import CustomUser, Collateral, Loan, Investment
+from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment
 from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm
+from .supabase_client import supabase
 
 
 def home(request):
@@ -18,17 +19,44 @@ def home(request):
             return redirect('marketplace')
         elif request.user.role == 'agent':
             return redirect('agent_panel')
+        elif request.user.role == 'admin':
+            return redirect('admin_dashboard')
     return render(request, 'core/home.html')
 
 
 def register(request):
-    """User registration"""
+    """User registration with Supabase integration"""
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST)
         if form.is_valid():
+            # Save to Django first
             user = form.save()
-            username = form.cleaned_data.get('username')
-            messages.success(request, f'Account created for {username}!')
+            
+            # Also save to Supabase
+            user_data = {
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'role': user.role,
+                'phone_number': user.phone_number,
+                'national_id': user.national_id,
+                'wallet_balance': 0.00,
+                'total_earnings': 0.00,
+                'commission_rate': 0.50 if user.role == 'agent' else 0.00,
+                'is_promoted_admin': False,
+                'is_active': True,
+                'is_staff': user.role == 'admin',
+            }
+            
+            # Insert into Supabase
+            supabase_result = supabase.insert('users', user_data)
+            
+            if supabase_result:
+                messages.success(request, f'Account created for {user.username}! You can now log in.')
+            else:
+                messages.warning(request, f'Account created for {user.username}, but there was an issue syncing with the database.')
+            
             return redirect('login')
     else:
         form = CustomUserCreationForm()
@@ -213,3 +241,375 @@ def loan_detail(request, loan_id):
         'investments': investments,
     }
     return render(request, 'core/loan_detail.html', context)
+
+
+@login_required
+def admin_dashboard(request):
+    """Admin dashboard with access to all system data"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Get all system statistics
+    total_users = CustomUser.objects.count()
+    total_borrowers = CustomUser.objects.filter(role='borrower').count()
+    total_lenders = CustomUser.objects.filter(role='lender').count()
+    total_agents = CustomUser.objects.filter(role='agent').count()
+    
+    total_collateral = Collateral.objects.count()
+    pending_collateral = Collateral.objects.filter(status='pending').count()
+    verified_collateral = Collateral.objects.filter(status='verified').count()
+    
+    total_loans = Loan.objects.count()
+    active_loans = Loan.objects.filter(status='active').count()
+    listed_loans = Loan.objects.filter(status='listed').count()
+    pending_loans = Loan.objects.filter(status='pending_collateral').count()
+    
+    total_investments = Investment.objects.count()
+    total_invested_amount = Investment.objects.aggregate(
+        total=Sum('amount_invested')
+    )['total'] or 0
+    
+    # Recent activities
+    recent_loans = Loan.objects.select_related('borrower', 'collateral').order_by('-created_at')[:10]
+    recent_investments = Investment.objects.select_related('lender', 'loan').order_by('-date')[:10]
+    recent_users = CustomUser.objects.order_by('-date_joined')[:10]
+    
+    # Financial summary
+    total_loan_amount = Loan.objects.aggregate(
+        total=Sum('principal_amount')
+    )['total'] or 0
+    
+    total_funded_amount = Loan.objects.aggregate(
+        total=Sum('funded_amount')
+    )['total'] or 0
+    
+    context = {
+        'total_users': total_users,
+        'total_borrowers': total_borrowers,
+        'total_lenders': total_lenders,
+        'total_agents': total_agents,
+        'total_collateral': total_collateral,
+        'pending_collateral': pending_collateral,
+        'verified_collateral': verified_collateral,
+        'total_loans': total_loans,
+        'active_loans': active_loans,
+        'listed_loans': listed_loans,
+        'pending_loans': pending_loans,
+        'total_investments': total_investments,
+        'total_invested_amount': total_invested_amount,
+        'recent_loans': recent_loans,
+        'recent_investments': recent_investments,
+        'recent_users': recent_users,
+        'total_loan_amount': total_loan_amount,
+        'total_funded_amount': total_funded_amount,
+    }
+    return render(request, 'core/admin_dashboard.html', context)
+
+
+@login_required
+def admin_borrower_view(request):
+    """Admin view of borrower dashboard"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Get all borrowers and their loans
+    borrowers = CustomUser.objects.filter(role='borrower').prefetch_related('loan_set__collateral')
+    
+    context = {
+        'borrowers': borrowers,
+        'is_admin_view': True,
+    }
+    return render(request, 'core/admin_borrower_view.html', context)
+
+
+@login_required
+def admin_lender_view(request):
+    """Admin view of lender marketplace"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Get all lenders and their investments
+    lenders = CustomUser.objects.filter(role='lender').prefetch_related('investment_set__loan')
+    listed_loans = Loan.objects.filter(status='listed').select_related('borrower', 'collateral')
+    
+    context = {
+        'lenders': lenders,
+        'listed_loans': listed_loans,
+        'is_admin_view': True,
+    }
+    return render(request, 'core/admin_lender_view.html', context)
+
+
+@login_required
+def admin_agent_view(request):
+    """Admin view of agent panel"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Get all agents and pending collateral
+    agents = CustomUser.objects.filter(role='agent')
+    pending_collaterals = Collateral.objects.filter(status='pending').select_related('user')
+    all_collaterals = Collateral.objects.all().select_related('user').order_by('-created_at')
+    
+    context = {
+        'agents': agents,
+        'pending_collaterals': pending_collaterals,
+        'all_collaterals': all_collaterals,
+        'is_admin_view': True,
+    }
+    return render(request, 'core/admin_agent_view.html', context)
+
+@login_required
+def admin_users_management(request):
+    """Admin view to manage all users"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Handle user promotion to admin
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        user_id = request.POST.get('user_id')
+        
+        if action == 'promote_admin' and user_id:
+            user = get_object_or_404(CustomUser, id=user_id)
+            user.role = 'admin'
+            user.is_promoted_admin = True
+            user.is_staff = True
+            user.save()
+            messages.success(request, f'{user.username} has been promoted to Administrator.')
+        
+        elif action == 'add_wallet_funds' and user_id:
+            user = get_object_or_404(CustomUser, id=user_id)
+            amount = Decimal(request.POST.get('amount', '0'))
+            description = request.POST.get('description', 'Admin wallet credit')
+            
+            if amount > 0:
+                user.add_to_wallet(amount, description)
+                messages.success(request, f'KES {amount} added to {user.username}\'s wallet.')
+        
+        return redirect('admin_users_management')
+    
+    # Get all users with statistics
+    all_users = CustomUser.objects.all().order_by('-date_joined')
+    
+    context = {
+        'all_users': all_users,
+        'total_users': all_users.count(),
+        'borrowers_count': all_users.filter(role='borrower').count(),
+        'lenders_count': all_users.filter(role='lender').count(),
+        'agents_count': all_users.filter(role='agent').count(),
+        'admins_count': all_users.filter(role='admin').count(),
+    }
+    return render(request, 'core/admin_users_management.html', context)
+
+
+@login_required
+def admin_commissions_payouts(request):
+    """Admin view to manage agent commissions and payouts"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Handle commission payouts
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'pay_commission':
+            commission_id = request.POST.get('commission_id')
+            commission = get_object_or_404(Commission, id=commission_id)
+            
+            if not commission.is_paid:
+                # Add commission to agent's wallet
+                commission.agent.add_to_wallet(
+                    commission.amount, 
+                    f'Commission for Loan #{commission.loan.id}'
+                )
+                
+                # Mark commission as paid
+                commission.is_paid = True
+                commission.paid_at = timezone.now()
+                commission.save()
+                
+                messages.success(request, f'Commission of KES {commission.amount} paid to {commission.agent.username}.')
+        
+        elif action == 'pay_all_pending':
+            pending_commissions = Commission.objects.filter(is_paid=False)
+            total_paid = 0
+            
+            for commission in pending_commissions:
+                commission.agent.add_to_wallet(
+                    commission.amount,
+                    f'Commission for Loan #{commission.loan.id}'
+                )
+                commission.is_paid = True
+                commission.paid_at = timezone.now()
+                commission.save()
+                total_paid += commission.amount
+            
+            messages.success(request, f'Paid KES {total_paid} in total commissions to {pending_commissions.count()} agents.')
+        
+        return redirect('admin_commissions_payouts')
+    
+    # Get commission data
+    pending_commissions = Commission.objects.filter(is_paid=False).select_related('agent', 'loan')
+    paid_commissions = Commission.objects.filter(is_paid=True).select_related('agent', 'loan').order_by('-paid_at')[:20]
+    
+    # Agent statistics
+    agents = CustomUser.objects.filter(role='agent')
+    agent_stats = []
+    
+    for agent in agents:
+        total_commissions = Commission.objects.filter(agent=agent).aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+        
+        paid_commissions_sum = Commission.objects.filter(agent=agent, is_paid=True).aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+        
+        pending_commissions_sum = Commission.objects.filter(agent=agent, is_paid=False).aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+        
+        agent_stats.append({
+            'agent': agent,
+            'total_commissions': total_commissions,
+            'paid_commissions': paid_commissions_sum,
+            'pending_commissions': pending_commissions_sum,
+            'wallet_balance': agent.wallet_balance,
+        })
+    
+    context = {
+        'pending_commissions': pending_commissions,
+        'paid_commissions': paid_commissions,
+        'agent_stats': agent_stats,
+        'total_pending': pending_commissions.aggregate(total=Sum('amount'))['total'] or 0,
+    }
+    return render(request, 'core/admin_commissions_payouts.html', context)
+
+
+@login_required
+def admin_payments_management(request):
+    """Admin view to manage loan payments and next payment tracking"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Handle payment processing
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'process_payment':
+            loan_id = request.POST.get('loan_id')
+            amount = Decimal(request.POST.get('amount', '0'))
+            payment_type = request.POST.get('payment_type', 'monthly')
+            
+            loan = get_object_or_404(Loan, id=loan_id)
+            
+            if amount > 0:
+                # Create payment record
+                payment = Payment.objects.create(
+                    loan=loan,
+                    amount=amount,
+                    payment_type=payment_type,
+                    processed_by=request.user
+                )
+                
+                # Update loan payment tracking
+                loan.payments_made += 1
+                
+                # Set next payment date
+                if payment_type == 'monthly':
+                    loan.next_payment_date = timezone.now() + timedelta(days=30)
+                elif payment_type == 'full':
+                    loan.status = 'paid'
+                    loan.next_payment_date = None
+                
+                loan.save()
+                
+                # Distribute returns to lenders
+                investments = Investment.objects.filter(loan=loan)
+                for investment in investments:
+                    monthly_return = investment.calculate_monthly_return()
+                    investment.lender.add_to_wallet(
+                        monthly_return,
+                        f'Monthly return from Loan #{loan.id}'
+                    )
+                    investment.total_returns_paid += monthly_return
+                    investment.save()
+                
+                messages.success(request, f'Payment of KES {amount} processed for Loan #{loan.id}.')
+        
+        return redirect('admin_payments_management')
+    
+    # Get active loans with payment info
+    active_loans = Loan.objects.filter(status='active').select_related('borrower', 'collateral')
+    
+    # Get upcoming payments (next 30 days)
+    upcoming_payments = []
+    overdue_payments = []
+    
+    for loan in active_loans:
+        if loan.next_payment_date:
+            days_until_payment = loan.get_days_until_payment()
+            payment_info = {
+                'loan': loan,
+                'days_until_payment': days_until_payment,
+                'payment_amount': loan.get_next_payment_amount(),
+                'is_overdue': loan.next_payment_date < timezone.now(),
+            }
+            
+            if payment_info['is_overdue']:
+                overdue_payments.append(payment_info)
+            else:
+                upcoming_payments.append(payment_info)
+    
+    # Recent payments
+    recent_payments = Payment.objects.all().select_related('loan', 'processed_by').order_by('-payment_date')[:20]
+    
+    context = {
+        'active_loans': active_loans,
+        'upcoming_payments': upcoming_payments[:10],  # Next 10 payments
+        'overdue_payments': overdue_payments,
+        'recent_payments': recent_payments,
+        'total_active_loans': active_loans.count(),
+        'total_overdue': len(overdue_payments),
+    }
+    return render(request, 'core/admin_payments_management.html', context)
+
+
+@login_required
+def admin_wallet_management(request):
+    """Admin view to manage user wallets"""
+    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
+        messages.error(request, 'Access denied. Administrators only.')
+        return redirect('home')
+    
+    # Get wallet statistics
+    all_users = CustomUser.objects.all()
+    
+    wallet_stats = {
+        'total_wallet_balance': all_users.aggregate(total=Sum('wallet_balance'))['total'] or 0,
+        'total_earnings': all_users.aggregate(total=Sum('total_earnings'))['total'] or 0,
+        'borrowers_balance': all_users.filter(role='borrower').aggregate(total=Sum('wallet_balance'))['total'] or 0,
+        'lenders_balance': all_users.filter(role='lender').aggregate(total=Sum('wallet_balance'))['total'] or 0,
+        'agents_balance': all_users.filter(role='agent').aggregate(total=Sum('wallet_balance'))['total'] or 0,
+    }
+    
+    # Recent wallet transactions
+    recent_transactions = WalletTransaction.objects.all().select_related('user').order_by('-created_at')[:50]
+    
+    # Users with highest wallet balances
+    top_wallets = all_users.filter(wallet_balance__gt=0).order_by('-wallet_balance')[:20]
+    
+    context = {
+        'wallet_stats': wallet_stats,
+        'recent_transactions': recent_transactions,
+        'top_wallets': top_wallets,
+    }
+    return render(request, 'core/admin_wallet_management.html', context)

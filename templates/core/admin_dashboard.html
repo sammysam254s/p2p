@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-crown me-2 text-warning"></i>Administrator Dashboard</h2>
+        <p class="text-muted">Complete system overview and management</p>
+    </div>
+</div>
+
+<!-- Quick Navigation -->
+<div class="row mb-4">
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_borrower_view' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-hand-holding-usd fa-2x text-primary mb-2"></i>
+                <h6>Borrowers</h6>
+                <small class="text-muted">{{ total_borrowers }} users</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_lender_view' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-line fa-2x text-success mb-2"></i>
+                <h6>Lenders</h6>
+                <small class="text-muted">{{ total_lenders }} users</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_agent_view' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-shield-alt fa-2x text-info mb-2"></i>
+                <h6>Agents</h6>
+                <small class="text-muted">{{ total_agents }} users</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_users_management' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-users-cog fa-2x text-warning mb-2"></i>
+                <h6>All Users</h6>
+                <small class="text-muted">{{ total_users }} total</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_commissions_payouts' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-money-check-alt fa-2x text-success mb-2"></i>
+                <h6>Commissions</h6>
+                <small class="text-muted">Payouts</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-2 mb-3">
+        <a href="{% url 'admin_payments_management' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-calendar-check fa-2x text-primary mb-2"></i>
+                <h6>Payments</h6>
+                <small class="text-muted">Next payments</small>
+            </div>
+        </a>
+    </div>
+</div>
+
+<!-- Second Row Navigation -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <a href="{% url 'admin_wallet_management' %}" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-wallet fa-2x text-info mb-2"></i>
+                <h6>Wallet Management</h6>
+                <small class="text-muted">User wallets</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3 mb-3">
+        <a href="/admin/" class="card text-decoration-none">
+            <div class="card-body text-center">
+                <i class="fas fa-cogs fa-2x text-warning mb-2"></i>
+                <h6>Django Admin</h6>
+                <small class="text-muted">System settings</small>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-percentage fa-2x text-success mb-2"></i>
+                <h6>Platform Fee</h6>
+                <small class="text-muted">2% per loan</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-handshake fa-2x text-primary mb-2"></i>
+                <h6>Agent Commission</h6>
+                <small class="text-muted">0.5% default</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-users fa-2x text-primary mb-2"></i>
+                <h4 class="text-primary">{{ total_users }}</h4>
+                <p class="text-muted mb-0">Total Users</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-coins fa-2x text-success mb-2"></i>
+                <h4 class="text-success">{{ total_loans }}</h4>
+                <p class="text-muted mb-0">Total Loans</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-handshake fa-2x text-info mb-2"></i>
+                <h4 class="text-info">{{ total_investments }}</h4>
+                <p class="text-muted mb-0">Total Investments</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-shield-alt fa-2x text-warning mb-2"></i>
+                <h4 class="text-warning">{{ total_collateral }}</h4>
+                <p class="text-muted mb-0">Collateral Items</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Financial Overview -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h6><i class="fas fa-money-bill-wave me-2"></i>Financial Summary</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <small class="text-muted">Total Loan Amount</small>
+                    <h5 class="text-primary">KES {{ total_loan_amount|floatformat:2 }}</h5>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Total Funded</small>
+                    <h5 class="text-success">KES {{ total_funded_amount|floatformat:2 }}</h5>
+                </div>
+                <div>
+                    <small class="text-muted">Total Invested</small>
+                    <h5 class="text-info">KES {{ total_invested_amount|floatformat:2 }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-3">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h6><i class="fas fa-chart-pie me-2"></i>Loan Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <small class="text-muted">Pending Collateral</small>
+                    <h6 class="text-warning">{{ pending_loans }}</h6>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">Listed</small>
+                    <h6 class="text-primary">{{ listed_loans }}</h6>
+                </div>
+                <div>
+                    <small class="text-muted">Active</small>
+                    <h6 class="text-success">{{ active_loans }}</h6>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-3">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-clipboard-check me-2"></i>Collateral Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <small class="text-muted">Pending Verification</small>
+                    <h6 class="text-warning">{{ pending_collateral }}</h6>
+                </div>
+                <div>
+                    <small class="text-muted">Verified</small>
+                    <h6 class="text-success">{{ verified_collateral }}</h6>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activities -->
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-clock me-2"></i>Recent Loans</h6>
+            </div>
+            <div class="card-body">
+                {% for loan in recent_loans %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small><strong>{{ loan.borrower.username }}</strong></small>
+                            <br>
+                            <small class="text-muted">KES {{ loan.principal_amount|floatformat:2 }}</small>
+                        </div>
+                        <span class="badge status-{{ loan.status }}">{{ loan.get_status_display }}</span>
+                    </div>
+                    <hr class="my-2">
+                {% empty %}
+                    <p class="text-muted">No recent loans</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-line me-2"></i>Recent Investments</h6>
+            </div>
+            <div class="card-body">
+                {% for investment in recent_investments %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small><strong>{{ investment.lender.username }}</strong></small>
+                            <br>
+                            <small class="text-muted">Loan #{{ investment.loan.id }}</small>
+                        </div>
+                        <small class="text-success">KES {{ investment.amount_invested|floatformat:2 }}</small>
+                    </div>
+                    <hr class="my-2">
+                {% empty %}
+                    <p class="text-muted">No recent investments</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-user-plus me-2"></i>Recent Users</h6>
+            </div>
+            <div class="card-body">
+                {% for user in recent_users %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small><strong>{{ user.username }}</strong></small>
+                            <br>
+                            <small class="text-muted">{{ user.email }}</small>
+                        </div>
+                        <span class="badge bg-secondary">{{ user.get_role_display }}</span>
+                    </div>
+                    <hr class="my-2">
+                {% empty %}
+                    <p class="text-muted">No recent users</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
