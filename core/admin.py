@@ -94,7 +94,7 @@ class CollateralAdmin(admin.ModelAdmin):
     list_display = ['brand_model', 'item_type', 'market_value', 'status', 'user', 'verified_by', 'get_max_loan_amount', 'created_at']
     list_filter = ['status', 'item_type', 'created_at', 'verification_date']
     search_fields = ['brand_model', 'item_type', 'user__username', 'user__email']
-    readonly_fields = ['created_at', 'updated_at', 'get_max_loan_amount']
+    readonly_fields = ['created_at', 'get_max_loan_amount']
     ordering = ['-created_at']
     
     actions = ['verify_collateral', 'release_collateral', 'mark_pending']
@@ -129,7 +129,7 @@ class LoanAdmin(admin.ModelAdmin):
     list_display = ['id', 'borrower', 'principal_amount', 'funded_amount', 'status', 'get_funding_percentage', 'interest_rate', 'duration_months', 'created_at']
     list_filter = ['status', 'duration_months', 'interest_rate', 'created_at']
     search_fields = ['borrower__username', 'borrower__email', 'collateral__brand_model', 'id']
-    readonly_fields = ['created_at', 'updated_at', 'get_funding_percentage', 'calculate_total_repayment', 'calculate_platform_fee', 'calculate_insurance_fee']
+    readonly_fields = ['created_at', 'get_funding_percentage', 'calculate_total_repayment', 'calculate_platform_fee', 'calculate_insurance_fee']
     ordering = ['-created_at']
     
     fieldsets = (
@@ -144,7 +144,7 @@ class LoanAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
+            'fields': ('created_at',),
             'classes': ('collapse',)
         }),
     )
@@ -213,54 +213,45 @@ class InvestmentAdmin(admin.ModelAdmin):
 @admin.register(Commission)
 class CommissionAdmin(admin.ModelAdmin):
     """Enhanced Commission Admin"""
-    list_display = ['agent', 'loan', 'amount', 'status', 'created_at', 'paid_at']
-    list_filter = ['status', 'created_at', 'paid_at']
+    list_display = ['agent', 'loan', 'amount', 'is_paid', 'created_at', 'paid_at']
+    list_filter = ['is_paid', 'created_at', 'paid_at']
     search_fields = ['agent__username', 'agent__email', 'loan__id', 'loan__borrower__username']
     readonly_fields = ['created_at']
     ordering = ['-created_at']
     
-    actions = ['mark_as_paid', 'mark_as_pending']
+    actions = ['mark_as_paid', 'mark_as_unpaid']
     
     def mark_as_paid(self, request, queryset):
         """Mark selected commissions as paid"""
         from django.utils import timezone
-        updated = queryset.update(status='paid', paid_at=timezone.now())
+        updated = queryset.update(is_paid=True, paid_at=timezone.now())
         self.message_user(request, f'{updated} commissions marked as paid.')
     mark_as_paid.short_description = "Mark as paid"
     
-    def mark_as_pending(self, request, queryset):
-        """Mark selected commissions as pending"""
-        updated = queryset.update(status='pending', paid_at=None)
-        self.message_user(request, f'{updated} commissions marked as pending.')
-    mark_as_pending.short_description = "Mark as pending"
+    def mark_as_unpaid(self, request, queryset):
+        """Mark selected commissions as unpaid"""
+        updated = queryset.update(is_paid=False, paid_at=None)
+        self.message_user(request, f'{updated} commissions marked as unpaid.')
+    mark_as_unpaid.short_description = "Mark as unpaid"
 
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     """Enhanced Payment Admin"""
-    list_display = ['loan', 'borrower', 'amount', 'payment_type', 'status', 'mpesa_transaction_id', 'created_at', 'completed_at']
-    list_filter = ['payment_type', 'status', 'created_at']
-    search_fields = ['loan__id', 'borrower__username', 'borrower__email', 'mpesa_transaction_id']
-    readonly_fields = ['created_at']
-    ordering = ['-created_at']
+    list_display = ['loan', 'get_borrower', 'amount', 'payment_type', 'payment_date', 'processed_by']
+    list_filter = ['payment_type', 'payment_date']
+    search_fields = ['loan__id', 'loan__borrower__username', 'loan__borrower__email']
+    readonly_fields = ['payment_date']
+    ordering = ['-payment_date']
     
-    actions = ['mark_as_completed', 'mark_as_failed', 'mark_as_pending']
+    def get_borrower(self, obj):
+        return obj.loan.borrower.username
+    get_borrower.short_description = 'Borrower'
     
-    def mark_as_completed(self, request, queryset):
-        """Mark selected payments as completed"""
-        from django.utils import timezone
-        updated = queryset.update(status='completed', completed_at=timezone.now())
-        self.message_user(request, f'{updated} payments marked as completed.')
-    mark_as_completed.short_description = "Mark as completed"
+    actions = ['mark_as_processed']
     
-    def mark_as_failed(self, request, queryset):
-        """Mark selected payments as failed"""
-        updated = queryset.update(status='failed')
-        self.message_user(request, f'{updated} payments marked as failed.')
-    mark_as_failed.short_description = "Mark as failed"
-    
-    def mark_as_pending(self, request, queryset):
-        """Mark selected payments as pending"""
-        updated = queryset.update(status='pending', completed_at=None)
-        self.message_user(request, f'{updated} payments marked as pending.')
-    mark_as_pending.short_description = "Mark as pending"
+    def mark_as_processed(self, request, queryset):
+        """Mark selected payments as processed"""
+        updated = queryset.update(processed_by=request.user)
+        self.message_user(request, f'{updated} payments marked as processed.')
+    mark_as_processed.short_description = "Mark as processed"
