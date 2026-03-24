@@ -5,6 +5,13 @@ from django.utils import timezone
 from datetime import timedelta
 import uuid
 
+# Check if Pillow is available for ImageField
+try:
+    from PIL import Image
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+
 
 class KYCVerification(models.Model):
     """KYC verification model for user identity verification"""
@@ -22,11 +29,17 @@ class KYCVerification(models.Model):
     id_number = models.CharField(max_length=20)
     date_of_birth = models.DateField()
     
-    # Document Images
-    id_front_image = models.ImageField(upload_to='kyc/id_front/', null=True, blank=True)
-    id_back_image = models.ImageField(upload_to='kyc/id_back/', null=True, blank=True)
-    selfie_image = models.ImageField(upload_to='kyc/selfies/', null=True, blank=True)
-    signature_image = models.ImageField(upload_to='kyc/signatures/', null=True, blank=True)
+    # Document Images - conditional based on Pillow availability
+    if PILLOW_AVAILABLE:
+        id_front_image = models.ImageField(upload_to='kyc/id_front/', null=True, blank=True)
+        id_back_image = models.ImageField(upload_to='kyc/id_back/', null=True, blank=True)
+        selfie_image = models.ImageField(upload_to='kyc/selfies/', null=True, blank=True)
+        signature_image = models.ImageField(upload_to='kyc/signatures/', null=True, blank=True)
+    else:
+        id_front_image = models.CharField(max_length=500, null=True, blank=True, help_text="Image path (Pillow not available)")
+        id_back_image = models.CharField(max_length=500, null=True, blank=True, help_text="Image path (Pillow not available)")
+        selfie_image = models.CharField(max_length=500, null=True, blank=True, help_text="Image path (Pillow not available)")
+        signature_image = models.CharField(max_length=500, null=True, blank=True, help_text="Image path (Pillow not available)")
     
     # Verification Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -191,7 +204,10 @@ class Loan(models.Model):
     activated_at = models.DateTimeField(null=True, blank=True)
     next_payment_date = models.DateTimeField(null=True, blank=True)
     payments_made = models.IntegerField(default=0)
-    contract_pdf = models.FileField(upload_to='contracts/', null=True, blank=True)
+    if PILLOW_AVAILABLE:
+        contract_pdf = models.FileField(upload_to='contracts/', null=True, blank=True)
+    else:
+        contract_pdf = models.CharField(max_length=500, null=True, blank=True, help_text="File path (Pillow not available)")
     
     def __str__(self):
         return f"Loan #{self.id} - KES {self.principal_amount}"
