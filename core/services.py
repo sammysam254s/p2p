@@ -1,7 +1,10 @@
 from decimal import Decimal
 from django.utils import timezone
 from datetime import timedelta
-from .supabase_client import supabase
+from .supabase_client import (
+    supabase, user_service, collateral_service, 
+    loan_service, investment_service
+)
 
 
 class LoanCalculatorService:
@@ -46,91 +49,175 @@ class LoanCalculatorService:
         return principal + total_interest + platform_fee + insurance_fee
 
 
-class SupabaseDataService:
-    """Service for interacting with Supabase database"""
+class SupabaseService:
+    """Main service class that combines all Supabase operations"""
     
-    @staticmethod
-    def create_user(user_data):
-        """Create a new user in Supabase"""
-        return supabase.insert('users', user_data)
+    def __init__(self):
+        self.user_service = user_service
+        self.collateral_service = collateral_service
+        self.loan_service = loan_service
+        self.investment_service = investment_service
+        self.calculator = LoanCalculatorService()
     
-    @staticmethod
-    def get_user_by_username(username):
+    # User operations
+    def create_user(self, username, email, password, role, phone_number, national_id, first_name="", last_name=""):
+        """Create a new user"""
+        return self.user_service.create_user(
+            username, email, password, role, phone_number, national_id, first_name, last_name
+        )
+    
+    def authenticate_user(self, username, password):
+        """Authenticate user"""
+        return self.user_service.authenticate_user(username, password)
+    
+    def get_user_by_username(self, username):
         """Get user by username"""
-        result = supabase.select('users', filters={'username': username})
-        return result[0] if result else None
+        return self.user_service.get_user_by_username(username)
     
-    @staticmethod
-    def create_collateral(collateral_data):
-        """Create collateral record"""
-        return supabase.insert('collateral', collateral_data)
+    def get_user_by_email(self, email):
+        """Get user by email"""
+        return self.user_service.get_user_by_email(email)
     
-    @staticmethod
-    def get_pending_collaterals():
-        """Get all pending collateral items"""
-        return supabase.select('collateral', filters={'status': 'pending'})
+    def get_user_by_id(self, user_id):
+        """Get user by ID"""
+        return self.user_service.get_user_by_id(user_id)
     
-    @staticmethod
-    def update_collateral_status(collateral_id, status, verification_date=None):
+    def update_user(self, user_id, data):
+        """Update user"""
+        return self.user_service.update_user(user_id, data)
+    
+    def get_all_users(self):
+        """Get all users"""
+        return self.user_service.get_all_users()
+    
+    def get_users_by_role(self, role):
+        """Get users by role"""
+        return self.user_service.get_users_by_role(role)
+    
+    # Collateral operations
+    def create_collateral(self, user_id, item_type, brand_model, market_value):
+        """Create collateral"""
+        return self.collateral_service.create_collateral(user_id, item_type, brand_model, market_value)
+    
+    def get_user_collaterals(self, user_id):
+        """Get user's collaterals"""
+        return self.collateral_service.get_user_collaterals(user_id)
+    
+    def get_pending_collaterals(self):
+        """Get pending collaterals"""
+        return self.collateral_service.get_pending_collaterals()
+    
+    def update_collateral_status(self, collateral_id, status, verified_by=None):
         """Update collateral status"""
-        data = {'status': status}
-        if verification_date:
-            data['verification_date'] = verification_date.isoformat()
-        
-        return supabase.update('collateral', data, {'id': collateral_id})
+        return self.collateral_service.update_collateral_status(collateral_id, status, verified_by)
     
-    @staticmethod
-    def create_loan(loan_data):
-        """Create a new loan"""
-        return supabase.insert('loans', loan_data)
+    def get_collateral_by_id(self, collateral_id):
+        """Get collateral by ID"""
+        return self.collateral_service.get_collateral_by_id(collateral_id)
     
-    @staticmethod
-    def get_loans_by_borrower(borrower_id):
-        """Get all loans for a borrower"""
-        return supabase.select('loans', filters={'borrower_id': borrower_id})
+    # Loan operations
+    def create_loan(self, borrower_id, collateral_id, principal_amount, interest_rate=13.00, duration_months=3):
+        """Create loan"""
+        return self.loan_service.create_loan(borrower_id, collateral_id, principal_amount, interest_rate, duration_months)
     
-    @staticmethod
-    def get_listed_loans():
-        """Get all loans with status 'listed'"""
-        return supabase.select('loans', filters={'status': 'listed'})
+    def get_loans_by_borrower(self, borrower_id):
+        """Get borrower's loans"""
+        return self.loan_service.get_loans_by_borrower(borrower_id)
     
-    @staticmethod
-    def update_loan_status(loan_id, status):
+    def get_listed_loans(self):
+        """Get listed loans"""
+        return self.loan_service.get_listed_loans()
+    
+    def get_all_loans(self):
+        """Get all loans"""
+        return self.loan_service.get_all_loans()
+    
+    def update_loan_status(self, loan_id, status):
         """Update loan status"""
-        return supabase.update('loans', {'status': status}, {'id': loan_id})
+        return self.loan_service.update_loan_status(loan_id, status)
     
-    @staticmethod
-    def update_loan_funding(loan_id, funded_amount):
-        """Update loan funded amount"""
-        return supabase.update('loans', {'funded_amount': funded_amount}, {'id': loan_id})
+    def update_loan_funding(self, loan_id, funded_amount):
+        """Update loan funding"""
+        return self.loan_service.update_loan_funding(loan_id, funded_amount)
     
-    @staticmethod
-    def create_investment(investment_data):
-        """Create a new investment"""
-        return supabase.insert('investments', investment_data)
+    def get_loan_by_id(self, loan_id):
+        """Get loan by ID"""
+        return self.loan_service.get_loan_by_id(loan_id)
     
-    @staticmethod
-    def get_investments_by_loan(loan_id):
-        """Get all investments for a loan"""
-        return supabase.select('investments', filters={'loan_id': loan_id})
+    # Investment operations
+    def create_investment(self, lender_id, loan_id, amount_invested):
+        """Create investment"""
+        return self.investment_service.create_investment(lender_id, loan_id, amount_invested)
     
-    @staticmethod
-    def get_loan_with_details(loan_id):
-        """Get loan with collateral and borrower details"""
-        # This would need to be implemented with proper joins in a real scenario
-        # For now, we'll make separate calls
-        loan = supabase.select('loans', filters={'id': loan_id})
-        if loan:
-            loan = loan[0]
-            # Get collateral details
-            collateral = supabase.select('collateral', filters={'id': loan['collateral_id']})
-            if collateral:
-                loan['collateral'] = collateral[0]
-            
-            # Get borrower details
-            borrower = supabase.select('users', filters={'id': loan['borrower_id']})
-            if borrower:
-                loan['borrower'] = borrower[0]
-            
-            return loan
-        return None
+    def get_investments_by_loan(self, loan_id):
+        """Get loan investments"""
+        return self.investment_service.get_investments_by_loan(loan_id)
+    
+    def get_investments_by_lender(self, lender_id):
+        """Get lender investments"""
+        return self.investment_service.get_investments_by_lender(lender_id)
+    
+    def get_all_investments(self):
+        """Get all investments"""
+        return self.investment_service.get_all_investments()
+    
+    # Complex operations
+    def get_loan_with_details(self, loan_id):
+        """Get loan with all related details"""
+        loan = self.get_loan_by_id(loan_id)
+        if not loan:
+            return None
+        
+        # Get collateral details
+        collateral = self.get_collateral_by_id(loan['collateral_id'])
+        if collateral:
+            loan['collateral'] = collateral
+        
+        # Get borrower details
+        borrower = self.get_user_by_id(loan['borrower_id'])
+        if borrower:
+            loan['borrower'] = borrower
+        
+        # Get investments
+        investments = self.get_investments_by_loan(loan_id)
+        loan['investments'] = investments or []
+        
+        # Calculate loan metrics
+        loan['max_loan_amount'] = float(self.calculator.calculate_max_loan_amount(collateral['market_value'])) if collateral else 0
+        loan['platform_fee'] = float(self.calculator.calculate_platform_fee(loan['principal_amount']))
+        loan['insurance_fee'] = float(self.calculator.calculate_insurance_fee(loan['principal_amount']))
+        loan['monthly_interest'] = float(self.calculator.calculate_monthly_interest(loan['principal_amount'], loan['interest_rate']))
+        loan['total_repayment'] = float(self.calculator.calculate_total_repayment(loan['principal_amount'], loan['duration_months'], loan['interest_rate']))
+        
+        # Calculate funding percentage
+        if loan['principal_amount'] > 0:
+            loan['funding_percentage'] = (loan['funded_amount'] / loan['principal_amount']) * 100
+        else:
+            loan['funding_percentage'] = 0
+        
+        return loan
+    
+    def get_dashboard_stats(self):
+        """Get dashboard statistics"""
+        all_users = self.get_all_users() or []
+        all_loans = self.get_all_loans() or []
+        all_investments = self.get_all_investments() or []
+        
+        stats = {
+            'total_users': len(all_users),
+            'total_borrowers': len([u for u in all_users if u.get('role') == 'borrower']),
+            'total_lenders': len([u for u in all_users if u.get('role') == 'lender']),
+            'total_agents': len([u for u in all_users if u.get('role') == 'agent']),
+            'total_loans': len(all_loans),
+            'active_loans': len([l for l in all_loans if l.get('status') == 'active']),
+            'listed_loans': len([l for l in all_loans if l.get('status') == 'listed']),
+            'total_investments': len(all_investments),
+            'total_funded_amount': sum([float(i.get('amount_invested', 0)) for i in all_investments]),
+            'total_loan_amount': sum([float(l.get('principal_amount', 0)) for l in all_loans])
+        }
+        
+        return stats
+
+
+# Global service instance
+supabase_service = SupabaseService()

@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.views import LoginView
+from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
@@ -10,6 +10,7 @@ import logging
 from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment
 from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm
 from .supabase_client import supabase
+from .services import supabase_service
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,15 @@ class CustomLoginView(LoginView):
         
         if user is not None:
             logger.info(f"User {username} authenticated successfully")
+            
+            # Special check for admin email - auto-promote to admin if needed
+            if user.email == 'sammyseth260@gmail.com' and user.role != 'admin':
+                logger.info(f"Auto-promoting user {username} to admin based on email")
+                user.role = 'admin'
+                user.is_staff = True
+                user.is_superuser = True
+                user.is_promoted_admin = True
+                user.save()
             
             # Check if user has a role
             if not hasattr(user, 'role') or not user.role:
@@ -67,10 +77,48 @@ class CustomLoginView(LoginView):
         return super().form_invalid(form)
 
 
+class CustomLogoutView(LogoutView):
+    """Custom logout view that handles both GET and POST requests"""
+    
+    def get(self, request, *args, **kwargs):
+        """Handle GET requests for logout"""
+        return self.post(request, *args, **kwargs)
+    
+    def post(self, request, *args, **kwargs):
+        """Handle POST requests for logout"""
+        if request.user.is_authenticated:
+            username = request.user.username
+            logger.info(f"User {username} logging out")
+            messages.success(request, 'You have been logged out successfully.')
+        
+        return super().post(request, *args, **kwargs)
+
+
 def home(request):
     """Home page - redirect based on user role or show landing page"""
     if request.user.is_authenticated:
         logger.info(f"Authenticated user {request.user.username} accessing home page")
+        
+        # Special check for admin email - auto-promote to admin if needed
+        if request.user.email == 'sammyseth260@gmail.com' and request.user.role != 'admin':
+            logger.info(f"Auto-promoting user {request.user.username} to admin based on email")
+            
+            # Update in Supabase
+            supabase_user = supabase_service.get_user_by_username(request.user.username)
+            if supabase_user:
+                supabase_service.update_user(supabase_user['id'], {
+                    'role': 'admin',
+                    'is_staff': True,
+                    'is_superuser': True,
+                    'is_promoted_admin': True
+                })
+            
+            # Update Django user
+            request.user.role = 'admin'
+            request.user.is_staff = True
+            request.user.is_superuser = True
+            request.user.is_promoted_admin = True
+            request.user.save()
         
         # Check if user has a role
         if not hasattr(request.user, 'role') or not request.user.role:
@@ -101,37 +149,54 @@ def register(request):
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST)
         if form.is_valid():
-            # Save to Django first
-            user = form.save()
-            
-            # Also save to Supabase
-            user_data = {
-                'username': user.username,
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'role': user.role,
-                'phone_number': user.phone_number,
-                'national_id': user.national_id,
-                'wallet_balance': 0.00,
-                'total_earnings': 0.00,
-                'commission_rate': 0.50 if user.role == 'agent' else 0.00,
-                'is_promoted_admin': False,
-                'is_active': True,
-                'is_staff': user.role == 'admin',
-            }
-            
-            # Insert into Supabase
-            supabase_result = supabase.insert('users', user_data)
-            
-            if supabase_result:
-                messages.success(request, f'Account created for {user.username}! You can now log in.')
-            else:
-                messages.warning(request, f'Account created for {user.username}, but there was an issue syncing with the database.')
-            
-            return redirect('login')
+            try:
+                # Create user in Supabase first
+                username = form.cleaned_data['username']
+                email = form.cleaned_data['email']
+                password = form.cleaned_data['password1']
+                role = form.cleaned_data['role']
+                phone_number = form.cleaned_data['phone_number']
+                national_id = form.cleaned_data['national_id']
+                first_name = form.cleaned_data.get('first_name', '')
+                last_name = form.cleaned_data.get('last_name', '')
+                
+                # Check if user already exists in Supabase
+                existing_user = supabase_service.get_user_by_username(username)
+                if existing_user:
+                    messages.error(request, 'Username already exists.')
+                    return render(request, 'registration/register.html', {'form': form})
+                
+                existing_email = supabase_service.get_user_by_email(email)
+                if existing_email:
+                    messages.error(request, 'Email already exists.')
+                    return render(request, 'registration/register.html', {'form': form})
+                
+                # Create user in Supabase
+                supabase_result = supabase_service.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    role=role,
+                    phone_number=phone_number,
+                    national_id=national_id,
+                    first_name=first_name,
+                    last_name=last_name
+                )
+                
+                if supabase_result:
+                    logger.info(f"User {username} created successfully in Supabase")
+                    messages.success(request, f'Account created for {username}! You can now log in.')
+                    return redirect('login')
+                else:
+                    logger.error(f"Failed to create user {username} in Supabase")
+                    messages.error(request, 'There was an error creating your account. Please try again.')
+                    
+            except Exception as e:
+                logger.error(f"Registration error: {str(e)}")
+                messages.error(request, 'There was an error creating your account. Please try again.')
     else:
         form = CustomUserCreationForm()
+    
     return render(request, 'registration/register.html', {'form': form})
 
 

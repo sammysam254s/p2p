@@ -150,6 +150,7 @@ STATICFILES_DIRS = [
 TIME_ZONE = 'Africa/Nairobi'
 # Authentication backends
 AUTHENTICATION_BACKENDS = [
+    'core.backends.SupabaseAuthBackend',
     'core.backends.CustomAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]

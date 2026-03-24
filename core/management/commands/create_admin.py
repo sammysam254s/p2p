@@ -1,51 +1,69 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 import logging
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = 'Create admin user for P2P Secure-Lend'
+    help = 'Create admin user sammyseth260@gmail.com'
 
     def handle(self, *args, **options):
         admin_email = 'sammyseth260@gmail.com'
-        admin_username = 'admin'
+        admin_username = 'sammyseth260'
         
         try:
-            # Check if admin user already exists
-            if User.objects.filter(email=admin_email).exists():
+            # Try to get existing user by email
+            try:
+                user = User.objects.get(email=admin_email)
+                # Update existing user to admin
+                user.role = 'admin'
+                user.is_staff = True
+                user.is_superuser = True
+                user.is_promoted_admin = True
+                user.save()
                 self.stdout.write(
-                    self.style.WARNING(f'Admin user with email {admin_email} already exists')
+                    self.style.SUCCESS(f'Successfully updated existing user {admin_email} to admin')
                 )
                 return
+            except User.DoesNotExist:
+                pass
             
-            if User.objects.filter(username=admin_username).exists():
+            # Try to get existing user by username
+            try:
+                user = User.objects.get(username=admin_username)
+                # Update existing user to admin
+                user.email = admin_email
+                user.role = 'admin'
+                user.is_staff = True
+                user.is_superuser = True
+                user.is_promoted_admin = True
+                user.save()
                 self.stdout.write(
-                    self.style.WARNING(f'User with username {admin_username} already exists')
+                    self.style.SUCCESS(f'Successfully updated existing username {admin_username} to admin')
                 )
                 return
+            except User.DoesNotExist:
+                pass
             
-            # Create admin user
+            # Create new admin user
             admin_user = User.objects.create_user(
                 username=admin_username,
                 email=admin_email,
                 password='admin123',  # Default password
-                first_name='System',
-                last_name='Administrator'
+                first_name='Sammy',
+                last_name='Seth',
+                role='admin',
+                phone_number='254700000001',
+                national_id='ADMIN001',
+                is_staff=True,
+                is_superuser=True,
+                wallet_balance=0.00,
+                total_earnings=0.00,
+                commission_rate=0.00,
+                is_promoted_admin=True
             )
-            
-            # Set admin properties
-            admin_user.role = 'admin'
-            admin_user.is_staff = True
-            admin_user.is_superuser = True
-            admin_user.phone_number = '254700000001'
-            admin_user.national_id = 'ADMIN001'
-            admin_user.wallet_balance = 0.00
-            admin_user.total_earnings = 0.00
-            admin_user.commission_rate = 0.00
-            admin_user.is_promoted_admin = False
-            admin_user.save()
             
             self.stdout.write(
                 self.style.SUCCESS(f'Successfully created admin user: {admin_username}')
@@ -60,6 +78,13 @@ class Command(BaseCommand):
                 self.style.WARNING('Please change the password after first login!')
             )
             
+        except IntegrityError as e:
+            self.stdout.write(
+                self.style.ERROR(f'Database integrity error: {str(e)}')
+            )
+            self.stdout.write(
+                self.style.ERROR('This usually means the username or email already exists')
+            )
         except Exception as e:
             logger.error(f'Error creating admin user: {str(e)}')
             self.stdout.write(

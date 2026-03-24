@@ -1,19 +1,32 @@
--- P2P Secure-Lend Kenya Database Schema for Supabase
--- Run this in your Supabase SQL Editor
+-- Complete Supabase Setup for P2P Secure-Lend Kenya
+-- Run this in your Supabase SQL Editor to set up everything
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create custom user table (extending Supabase auth.users)
+-- Drop existing tables if they exist (be careful in production!)
+DROP TABLE IF EXISTS public.payments CASCADE;
+DROP TABLE IF EXISTS public.commissions CASCADE;
+DROP TABLE IF EXISTS public.wallet_transactions CASCADE;
+DROP TABLE IF EXISTS public.investments CASCADE;
+DROP TABLE IF EXISTS public.loans CASCADE;
+DROP TABLE IF EXISTS public.collateral CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+
+-- Create users table
 CREATE TABLE public.users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(150) UNIQUE NOT NULL,
-    email VARCHAR(254) NOT NULL,
+    email VARCHAR(254) UNIQUE NOT NULL,
     first_name VARCHAR(150) DEFAULT '',
     last_name VARCHAR(150) DEFAULT '',
     role VARCHAR(20) NOT NULL CHECK (role IN ('borrower', 'lender', 'agent', 'admin')),
     phone_number VARCHAR(15) NOT NULL,
     national_id VARCHAR(20) UNIQUE NOT NULL,
+    wallet_balance DECIMAL(12,2) DEFAULT 0.00,
+    total_earnings DECIMAL(12,2) DEFAULT 0.00,
+    commission_rate DECIMAL(5,2) DEFAULT 0.50,
+    is_promoted_admin BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     is_staff BOOLEAN DEFAULT false,
     is_superuser BOOLEAN DEFAULT false,
@@ -31,6 +44,7 @@ CREATE TABLE public.collateral (
     brand_model VARCHAR(200) NOT NULL,
     market_value DECIMAL(10,2) NOT NULL CHECK (market_value > 0),
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'released')),
+    verified_by UUID REFERENCES public.users(id),
     verification_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -66,6 +80,44 @@ CREATE TABLE public.investments (
     CONSTRAINT unique_lender_loan UNIQUE (lender_id, loan_id)
 );
 
+-- Create wallet transactions table
+CREATE TABLE public.wallet_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    transaction_type VARCHAR(20) NOT NULL CHECK (transaction_type IN ('credit', 'debit')),
+    amount DECIMAL(12,2) NOT NULL CHECK (amount > 0),
+    description TEXT DEFAULT '',
+    balance_after DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create commissions table
+CREATE TABLE public.commissions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    loan_id UUID NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+    amount DECIMAL(10,2) NOT NULL CHECK (amount >= 0),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    paid_at TIMESTAMPTZ,
+    
+    -- Prevent duplicate commissions
+    CONSTRAINT unique_agent_loan_commission UNIQUE (agent_id, loan_id)
+);
+
+-- Create payments table
+CREATE TABLE public.payments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loan_id UUID NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+    borrower_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
+    payment_type VARCHAR(20) NOT NULL CHECK (payment_type IN ('monthly', 'full', 'partial')),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+    mpesa_transaction_id VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_users_username ON public.users(username);
 CREATE INDEX idx_users_email ON public.users(email);
@@ -84,6 +136,17 @@ CREATE INDEX idx_loans_created_at ON public.loans(created_at);
 CREATE INDEX idx_investments_lender_id ON public.investments(lender_id);
 CREATE INDEX idx_investments_loan_id ON public.investments(loan_id);
 CREATE INDEX idx_investments_date ON public.investments(date);
+
+CREATE INDEX idx_wallet_transactions_user_id ON public.wallet_transactions(user_id);
+CREATE INDEX idx_wallet_transactions_created_at ON public.wallet_transactions(created_at);
+
+CREATE INDEX idx_commissions_agent_id ON public.commissions(agent_id);
+CREATE INDEX idx_commissions_loan_id ON public.commissions(loan_id);
+CREATE INDEX idx_commissions_status ON public.commissions(status);
+
+CREATE INDEX idx_payments_loan_id ON public.payments(loan_id);
+CREATE INDEX idx_payments_borrower_id ON public.payments(borrower_id);
+CREATE INDEX idx_payments_status ON public.payments(status);
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -104,86 +167,34 @@ CREATE TRIGGER update_collateral_updated_at BEFORE UPDATE ON public.collateral
 CREATE TRIGGER update_loans_updated_at BEFORE UPDATE ON public.loans
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create Row Level Security (RLS) policies
+-- Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collateral ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.loans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.investments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wallet_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.commissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 
--- Users can read their own data
+-- Create RLS policies for users
 CREATE POLICY "Users can view own profile" ON public.users
-    FOR SELECT USING (auth.uid()::text = id::text);
+    FOR SELECT USING (true); -- Allow all for now, can be restricted later
 
--- Users can update their own data
 CREATE POLICY "Users can update own profile" ON public.users
-    FOR UPDATE USING (auth.uid()::text = id::text);
+    FOR UPDATE USING (true); -- Allow all for now
 
--- Collateral policies
-CREATE POLICY "Users can view own collateral" ON public.collateral
-    FOR SELECT USING (auth.uid()::text = user_id::text);
+CREATE POLICY "Users can insert" ON public.users
+    FOR INSERT WITH CHECK (true); -- Allow all for now
 
-CREATE POLICY "Users can insert own collateral" ON public.collateral
-    FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
+-- Create RLS policies for other tables (simplified for now)
+CREATE POLICY "Allow all operations" ON public.collateral FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON public.loans FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON public.investments FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON public.wallet_transactions FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON public.commissions FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON public.payments FOR ALL USING (true);
 
-CREATE POLICY "Users can update own collateral" ON public.collateral
-    FOR UPDATE USING (auth.uid()::text = user_id::text);
-
--- Agents can view all pending collateral
-CREATE POLICY "Agents can view pending collateral" ON public.collateral
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM public.users 
-            WHERE id::text = auth.uid()::text 
-            AND role = 'agent'
-        )
-    );
-
--- Agents can update collateral status
-CREATE POLICY "Agents can update collateral status" ON public.collateral
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM public.users 
-            WHERE id::text = auth.uid()::text 
-            AND role = 'agent'
-        )
-    );
-
--- Loan policies
-CREATE POLICY "Borrowers can view own loans" ON public.loans
-    FOR SELECT USING (auth.uid()::text = borrower_id::text);
-
-CREATE POLICY "Borrowers can insert own loans" ON public.loans
-    FOR INSERT WITH CHECK (auth.uid()::text = borrower_id::text);
-
--- Lenders can view listed loans
-CREATE POLICY "Lenders can view listed loans" ON public.loans
-    FOR SELECT USING (
-        status = 'listed' OR 
-        EXISTS (
-            SELECT 1 FROM public.users 
-            WHERE id::text = auth.uid()::text 
-            AND role = 'lender'
-        )
-    );
-
--- Investment policies
-CREATE POLICY "Lenders can view own investments" ON public.investments
-    FOR SELECT USING (auth.uid()::text = lender_id::text);
-
-CREATE POLICY "Lenders can insert own investments" ON public.investments
-    FOR INSERT WITH CHECK (auth.uid()::text = lender_id::text);
-
--- Borrowers can view investments in their loans
-CREATE POLICY "Borrowers can view loan investments" ON public.investments
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM public.loans 
-            WHERE id = loan_id 
-            AND borrower_id::text = auth.uid()::text
-        )
-    );
-
--- Create functions for business logic
+-- Create business logic functions
 CREATE OR REPLACE FUNCTION calculate_max_loan_amount(market_val DECIMAL)
 RETURNS DECIMAL AS $$
 BEGIN
@@ -233,51 +244,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create view for loan details with calculations
-CREATE OR REPLACE VIEW loan_details AS
-SELECT 
-    l.*,
-    u.username as borrower_username,
-    u.phone_number as borrower_phone,
-    c.item_type,
-    c.brand_model,
-    c.market_value,
-    c.status as collateral_status,
-    c.verification_date,
-    calculate_max_loan_amount(c.market_value) as max_loan_amount,
-    calculate_platform_fee(l.principal_amount) as platform_fee,
-    calculate_insurance_fee(l.principal_amount) as insurance_fee,
-    calculate_monthly_interest(l.principal_amount, l.interest_rate) as monthly_interest,
-    calculate_total_repayment(l.principal_amount, l.duration_months, l.interest_rate) as total_repayment,
-    CASE 
-        WHEN l.principal_amount > 0 THEN (l.funded_amount / l.principal_amount) * 100 
-        ELSE 0 
-    END as funding_percentage,
-    CASE 
-        WHEN l.status = 'listed' THEN GREATEST(0, 7 - EXTRACT(DAY FROM NOW() - l.created_at))
-        ELSE 0 
-    END as days_remaining
-FROM public.loans l
-JOIN public.users u ON l.borrower_id = u.id
-JOIN public.collateral c ON l.collateral_id = c.id;
+-- Create admin user
+INSERT INTO public.users (
+    username, 
+    email, 
+    first_name, 
+    last_name, 
+    role, 
+    phone_number, 
+    national_id, 
+    is_active, 
+    is_staff, 
+    is_superuser,
+    wallet_balance,
+    total_earnings,
+    commission_rate,
+    is_promoted_admin
+) VALUES (
+    'sammyseth260',
+    'sammyseth260@gmail.com',
+    'Sammy',
+    'Seth',
+    'admin',
+    '254700000001',
+    'ADMIN001',
+    true,
+    true,
+    true,
+    0.00,
+    0.00,
+    0.00,
+    true
+) ON CONFLICT (username) DO UPDATE SET
+    email = 'sammyseth260@gmail.com',
+    role = 'admin',
+    is_staff = true,
+    is_superuser = true,
+    is_promoted_admin = true,
+    updated_at = NOW();
 
--- Insert sample data (optional - for testing)
--- You can uncomment these if you want sample data
-
-/*
--- Sample users
-INSERT INTO public.users (username, email, role, phone_number, national_id) VALUES
-('john_borrower', 'john@example.com', 'borrower', '254712345678', '12345678'),
-('jane_lender', 'jane@example.com', 'lender', '254787654321', '87654321'),
-('agent_smith', 'agent@example.com', 'agent', '254700000000', '00000000');
-
--- Sample collateral
-INSERT INTO public.collateral (user_id, item_type, brand_model, market_value, status) VALUES
-((SELECT id FROM public.users WHERE username = 'john_borrower'), 'Smartphone', 'iPhone 14 Pro', 120000.00, 'verified');
-
--- Sample loan
-INSERT INTO public.loans (borrower_id, collateral_id, principal_amount, duration_months, status) VALUES
-((SELECT id FROM public.users WHERE username = 'john_borrower'), 
- (SELECT id FROM public.collateral WHERE brand_model = 'iPhone 14 Pro'), 
- 40000.00, 3, 'listed');
-*/
+-- Verify setup
+SELECT 'Setup completed successfully!' as status;
+SELECT 'Admin user:' as info, username, email, role, is_staff, is_superuser 
+FROM public.users WHERE role = 'admin';
