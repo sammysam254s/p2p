@@ -5,14 +5,16 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from decimal import Decimal
 import logging
 import json
-from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment
-from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm
+from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment, KYCVerification
+from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm, KYCVerificationForm, CollateralVerificationForm
 from .supabase_client import supabase
 from .services import supabase_service
+from .kyc_ai_service import kyc_ai_service
+from .pdf_service import pdf_generator
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +212,8 @@ def register(request):
 
 
 @login_required
-@login_required
 def borrower_dashboard(request):
-    """Borrower dashboard with loan overview and application form"""
+    """Enhanced borrower dashboard with KYC requirement and loan management"""
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
@@ -226,72 +227,56 @@ def borrower_dashboard(request):
             messages.error(request, 'Access denied. Borrowers only.')
             return redirect('home')
         
-        # Get borrower's loans from Supabase
-        loans = supabase_service.get_loans_by_borrower(current_user['id']) or []
+        # Check KYC status for borrowers
+        kyc_verified = False
+        kyc_status = 'pending'
+        try:
+            kyc = request.user.kyc
+            kyc_verified = kyc.is_verified()
+            kyc_status = kyc.status
+        except KYCVerification.DoesNotExist:
+            pass
         
-        # Enrich loans with details
-        enriched_loans = []
-        total_outstanding = Decimal('0')
+        # Get borrower's loans from Django (for active loans with payments)
+        django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
         
-        for loan in loans:
-            loan_details = supabase_service.get_loan_with_details(loan['id'])
-            if loan_details:
-                enriched_loans.append(loan_details)
-                
-                # Calculate outstanding amount for active loans
-                if loan_details.get('status') == 'active':
-                    total_repayment = Decimal(str(loan_details.get('total_repayment', 0)))
-                    funded_amount = Decimal(str(loan_details.get('funded_amount', 0)))
-                    total_outstanding += (total_repayment - funded_amount)
+        # Calculate totals
+        total_borrowed = sum(loan.principal_amount for loan in django_loans)
+        total_outstanding = sum(
+            loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment())
+            for loan in django_loans if loan.status == 'active'
+        )
         
-        # Handle loan application
-        if request.method == 'POST':
+        # Handle loan application (only if KYC verified)
+        if request.method == 'POST' and kyc_verified:
             collateral_form = CollateralForm(request.POST)
             loan_form = LoanApplicationForm(request.POST)
             
             if collateral_form.is_valid() and loan_form.is_valid():
                 try:
-                    # Create collateral in Supabase
-                    collateral_result = supabase_service.create_collateral(
-                        user_id=current_user['id'],
-                        item_type=collateral_form.cleaned_data['item_type'],
-                        brand_model=collateral_form.cleaned_data['brand_model'],
-                        market_value=float(collateral_form.cleaned_data['market_value'])
-                    )
+                    # Create collateral
+                    collateral = collateral_form.save(commit=False)
+                    collateral.user = request.user
+                    collateral.save()
                     
-                    if not collateral_result:
-                        messages.error(request, 'Error creating collateral. Please try again.')
-                        return redirect('borrower_dashboard')
-                    
-                    collateral_id = collateral_result[0]['id']
-                    market_value = float(collateral_form.cleaned_data['market_value'])
-                    
-                    # Validate loan amount against 30/50 rule
-                    from .services import LoanCalculatorService
-                    max_loan_amount = LoanCalculatorService.calculate_max_loan_amount(market_value)
+                    # Validate loan amount against collateral
+                    max_loan_amount = collateral.calculate_max_loan_amount()
                     requested_amount = loan_form.cleaned_data['principal_amount']
                     
                     if requested_amount > max_loan_amount:
+                        collateral.delete()  # Remove invalid collateral
                         messages.error(request, 
                             f'Requested amount (KES {requested_amount:,.2f}) exceeds maximum '
                             f'allowed (KES {max_loan_amount:,.2f}) based on collateral value.')
-                        # Note: In a real implementation, you'd want to delete the collateral here
                     else:
-                        # Create loan in Supabase
-                        loan_result = supabase_service.create_loan(
-                            borrower_id=current_user['id'],
-                            collateral_id=collateral_id,
-                            principal_amount=float(requested_amount),
-                            interest_rate=float(loan_form.cleaned_data.get('interest_rate', 13.00)),
-                            duration_months=int(loan_form.cleaned_data['duration_months'])
-                        )
+                        # Create loan
+                        loan = loan_form.save(commit=False)
+                        loan.borrower = request.user
+                        loan.collateral = collateral
+                        loan.save()
                         
-                        if loan_result:
-                            messages.success(request, 
-                                'Loan application submitted! Please visit a station agent to verify your collateral.')
-                        else:
-                            messages.error(request, 'Error creating loan. Please try again.')
-                        
+                        messages.success(request, 
+                            'Loan application submitted! Please visit a station agent to verify your collateral.')
                         return redirect('borrower_dashboard')
                         
                 except Exception as e:
@@ -302,10 +287,14 @@ def borrower_dashboard(request):
             loan_form = LoanApplicationForm()
         
         context = {
-            'loans': enriched_loans,
+            'loans': django_loans,
+            'total_borrowed': total_borrowed,
             'total_outstanding': total_outstanding,
             'collateral_form': collateral_form,
             'loan_form': loan_form,
+            'kyc_verified': kyc_verified,
+            'kyc_status': kyc_status,
+            'wallet_balance': request.user.wallet_balance,
         }
         return render(request, 'core/borrower_dashboard.html', context)
         
@@ -400,9 +389,8 @@ def agent_panel(request):
 
 
 @login_required
-@login_required
 def marketplace(request):
-    """Lender marketplace showing available loans"""
+    """Enhanced lender marketplace with detailed loan information"""
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
@@ -416,85 +404,82 @@ def marketplace(request):
             messages.error(request, 'Access denied. Lenders only.')
             return redirect('home')
         
-        # Get listed loans from Supabase
-        listed_loans = supabase_service.get_listed_loans() or []
+        # Get listed loans from Django for better data consistency
+        listed_loans = Loan.objects.filter(status='listed').select_related('borrower', 'collateral').order_by('-created_at')
         
-        # Enrich loans with details and filter expired ones
+        # Filter expired loans
         valid_loans = []
         for loan in listed_loans:
-            # Get loan with full details
-            loan_details = supabase_service.get_loan_with_details(loan['id'])
-            if loan_details:
-                # Check if loan is expired (7 days)
-                from datetime import datetime, timezone as dt_timezone
-                created_at = datetime.fromisoformat(loan_details['created_at'].replace('Z', '+00:00'))
-                days_passed = (datetime.now(dt_timezone.utc) - created_at).days
-                
-                if days_passed <= 7:
-                    valid_loans.append(loan_details)
-                else:
-                    # Auto-expire loans that have passed 7-day window
-                    supabase_service.update_loan_status(loan['id'], 'cancelled')
+            if not loan.is_expired():
+                valid_loans.append(loan)
+            else:
+                # Auto-expire loans that have passed 7-day window
+                loan.status = 'cancelled'
+                loan.save()
         
         # Handle investment
         if request.method == 'POST':
             loan_id = request.POST.get('loan_id')
             investment_amount = Decimal(request.POST.get('investment_amount', '0'))
             
-            loan = supabase_service.get_loan_by_id(loan_id)
-            if not loan or loan.get('status') != 'listed':
-                messages.error(request, 'Loan not found or not available for investment.')
-                return redirect('marketplace')
-            
-            # Validate investment amount
-            remaining_amount = Decimal(str(loan['principal_amount'])) - Decimal(str(loan['funded_amount']))
-            if investment_amount > remaining_amount:
-                messages.error(request, f'Investment amount exceeds remaining funding needed (KES {remaining_amount:,.2f})')
-            elif investment_amount <= 0:
-                messages.error(request, 'Investment amount must be greater than zero.')
-            else:
-                try:
+            try:
+                loan = Loan.objects.get(id=loan_id, status='listed')
+                
+                # Validate investment amount
+                remaining_amount = loan.principal_amount - loan.funded_amount
+                if investment_amount > remaining_amount:
+                    messages.error(request, f'Investment amount exceeds remaining funding needed (KES {remaining_amount:,.2f})')
+                elif investment_amount <= 0:
+                    messages.error(request, 'Investment amount must be greater than zero.')
+                elif investment_amount < 100:
+                    messages.error(request, 'Minimum investment amount is KES 100.')
+                else:
                     # Check if lender already invested in this loan
-                    existing_investments = supabase_service.get_investments_by_loan(loan_id) or []
-                    existing_investment = None
-                    for inv in existing_investments:
-                        if inv.get('lender_id') == current_user['id']:
-                            existing_investment = inv
-                            break
+                    existing_investment = Investment.objects.filter(loan=loan, lender=request.user).first()
                     
                     if existing_investment:
-                        # Update existing investment (this would need a custom update method)
                         messages.info(request, 'You have already invested in this loan.')
                     else:
                         # Create new investment
-                        investment_result = supabase_service.create_investment(
-                            lender_id=current_user['id'],
-                            loan_id=loan_id,
-                            amount_invested=float(investment_amount)
+                        Investment.objects.create(
+                            lender=request.user,
+                            loan=loan,
+                            amount_invested=investment_amount
                         )
                         
-                        if investment_result:
-                            # Update loan funded amount
-                            new_funded_amount = float(loan['funded_amount']) + float(investment_amount)
-                            supabase_service.update_loan_funding(loan_id, new_funded_amount)
+                        # Update loan funded amount
+                        loan.funded_amount += investment_amount
+                        
+                        # Check if loan is fully funded
+                        if loan.funded_amount >= loan.principal_amount:
+                            loan.status = 'active'
+                            loan.activate_loan()
                             
-                            # Check if loan is fully funded
-                            if new_funded_amount >= float(loan['principal_amount']):
-                                supabase_service.update_loan_status(loan_id, 'active')
-                                messages.success(request, f'Loan fully funded! KES {investment_amount:,.2f} invested successfully.')
-                            else:
-                                messages.success(request, f'KES {investment_amount:,.2f} invested successfully.')
+                            # Generate updated contract PDF
+                            pdf_generator.save_contract_pdf(loan)
+                            
+                            messages.success(request, f'Loan fully funded! KES {investment_amount:,.2f} invested successfully.')
                         else:
-                            messages.error(request, 'Error processing investment. Please try again.')
-                    
-                except Exception as e:
-                    logger.error(f"Investment error: {str(e)}")
-                    messages.error(request, 'Error processing investment. Please try again.')
+                            messages.success(request, f'KES {investment_amount:,.2f} invested successfully.')
+                        
+                        loan.save()
                 
                 return redirect('marketplace')
+                
+            except Loan.DoesNotExist:
+                messages.error(request, 'Loan not found or not available for investment.')
+            except Exception as e:
+                logger.error(f"Investment error: {str(e)}")
+                messages.error(request, 'Error processing investment. Please try again.')
+        
+        # Get lender's investments
+        lender_investments = Investment.objects.filter(lender=request.user).select_related('loan')
+        total_invested = sum(inv.amount_invested for inv in lender_investments)
         
         context = {
             'listed_loans': valid_loans,
+            'lender_investments': lender_investments,
+            'total_invested': total_invested,
         }
         return render(request, 'core/marketplace.html', context)
         
@@ -1076,6 +1061,233 @@ def admin_wallet_management(request):
         logger.error(f"Admin wallet management error: {str(e)}")
         messages.error(request, 'Error loading wallet management.')
         return redirect('admin_dashboard')
+
+@login_required
+def kyc_verification(request):
+    """KYC verification page for all users"""
+    try:
+        # Get or create KYC verification record
+        kyc, created = KYCVerification.objects.get_or_create(user=request.user)
+        
+        if request.method == 'POST':
+            form = KYCVerificationForm(request.POST, request.FILES, instance=kyc)
+            if form.is_valid():
+                kyc = form.save(commit=False)
+                kyc.status = 'under_review'
+                kyc.save()
+                
+                # Run AI verification
+                try:
+                    verification_result = kyc_ai_service.verify_kyc_submission(kyc)
+                    kyc.ai_verification_result = verification_result
+                    kyc.verification_score = verification_result.get('overall_score', 0)
+                    
+                    # Auto-approve if score is high enough
+                    if verification_result.get('passed', False) and verification_result.get('overall_score', 0) >= 85:
+                        kyc.status = 'verified'
+                        kyc.verified_at = timezone.now()
+                        messages.success(request, 'KYC verification completed successfully!')
+                    else:
+                        kyc.status = 'under_review'
+                        messages.info(request, 'KYC submitted for review. You will be notified once verified.')
+                    
+                    kyc.save()
+                    
+                except Exception as e:
+                    logger.error(f"AI verification error: {str(e)}")
+                    kyc.status = 'under_review'
+                    kyc.save()
+                    messages.info(request, 'KYC submitted for manual review.')
+                
+                return redirect('kyc_verification')
+        else:
+            form = KYCVerificationForm(instance=kyc)
+        
+        context = {
+            'form': form,
+            'kyc': kyc,
+            'can_submit': kyc.status in ['pending', 'rejected'],
+        }
+        return render(request, 'core/kyc_verification.html', context)
+        
+    except Exception as e:
+        logger.error(f"KYC verification error: {str(e)}")
+        messages.error(request, 'Error loading KYC verification.')
+        return redirect('home')
+
+
+@login_required
+def loan_payment(request, loan_id):
+    """Process loan payment from wallet"""
+    try:
+        loan = get_object_or_404(Loan, id=loan_id, borrower=request.user)
+        
+        if loan.status != 'active':
+            messages.error(request, 'This loan is not active for payments.')
+            return redirect('borrower_dashboard')
+        
+        if request.method == 'POST':
+            payment_type = request.POST.get('payment_type', 'monthly')
+            
+            if payment_type == 'monthly':
+                amount = loan.get_next_payment_amount()
+            elif payment_type == 'full':
+                # Calculate remaining balance
+                remaining_balance = loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment())
+                amount = max(remaining_balance, 0)
+            else:
+                amount = Decimal(request.POST.get('amount', '0'))
+            
+            # Check wallet balance
+            if request.user.wallet_balance >= amount:
+                # Process payment
+                success = request.user.deduct_from_wallet(
+                    amount, 
+                    f"Loan payment for Loan #{loan.id}"
+                )
+                
+                if success:
+                    # Create payment record
+                    Payment.objects.create(
+                        loan=loan,
+                        amount=amount,
+                        payment_type=payment_type,
+                        processed_by=request.user
+                    )
+                    
+                    # Update loan
+                    loan.payments_made += 1
+                    if payment_type == 'full' or loan.payments_made >= loan.duration_months:
+                        loan.status = 'paid'
+                        loan.next_payment_date = None
+                        # Release collateral
+                        loan.collateral.status = 'released'
+                        loan.collateral.save()
+                    else:
+                        # Set next payment date
+                        from datetime import timedelta
+                        loan.next_payment_date = timezone.now() + timedelta(days=30)
+                    
+                    loan.save()
+                    
+                    messages.success(request, f'Payment of KES {amount:,.2f} processed successfully!')
+                    return redirect('borrower_dashboard')
+                else:
+                    messages.error(request, 'Payment processing failed.')
+            else:
+                messages.error(request, f'Insufficient wallet balance. Required: KES {amount:,.2f}')
+        
+        context = {
+            'loan': loan,
+            'monthly_payment': loan.get_next_payment_amount(),
+            'remaining_balance': loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment()),
+        }
+        return render(request, 'core/loan_payment.html', context)
+        
+    except Exception as e:
+        logger.error(f"Loan payment error: {str(e)}")
+        messages.error(request, 'Error processing payment.')
+        return redirect('borrower_dashboard')
+
+
+@login_required
+def download_contract(request, loan_id):
+    """Download loan contract PDF"""
+    try:
+        loan = get_object_or_404(Loan, id=loan_id)
+        
+        # Check permissions
+        can_download = False
+        
+        if request.user == loan.borrower:
+            can_download = True
+        elif request.user.role == 'admin':
+            can_download = True
+        elif request.user.role == 'lender':
+            # Lender can download only if they invested in the loan
+            investments = Investment.objects.filter(loan=loan, lender=request.user)
+            can_download = investments.exists()
+        
+        if not can_download:
+            messages.error(request, 'You do not have permission to download this contract.')
+            return redirect('home')
+        
+        # Generate PDF if it doesn't exist
+        if not loan.contract_pdf:
+            pdf_generator.save_contract_pdf(loan)
+        
+        # Serve the PDF
+        response = HttpResponse(loan.contract_pdf.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="loan_contract_{loan.id}.pdf"'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Contract download error: {str(e)}")
+        messages.error(request, 'Error downloading contract.')
+        return redirect('home')
+
+
+@login_required
+def verify_collateral(request, collateral_id):
+    """Agent view to verify collateral and update market value"""
+    try:
+        # Check if user is agent or admin
+        if request.user.role not in ['agent', 'admin']:
+            messages.error(request, 'Access denied. Agents only.')
+            return redirect('home')
+        
+        collateral = get_object_or_404(Collateral, id=collateral_id, status='pending')
+        
+        if request.method == 'POST':
+            form = CollateralVerificationForm(request.POST, instance=collateral)
+            if form.is_valid():
+                collateral = form.save(commit=False)
+                collateral.status = 'verified'
+                collateral.verification_date = timezone.now()
+                collateral.verified_by = request.user
+                collateral.save()
+                
+                # Update associated loan status and generate PDF
+                try:
+                    loan = Loan.objects.get(collateral=collateral)
+                    loan.status = 'listed'
+                    loan.save()
+                    
+                    # Generate contract PDF
+                    pdf_generator.save_contract_pdf(loan)
+                    
+                    # Remove KYC images for security (after PDF generation)
+                    try:
+                        kyc = loan.borrower.kyc
+                        if kyc.status == 'verified':
+                            # Images are now in the PDF, remove from KYC for security
+                            kyc.id_front_image.delete()
+                            kyc.id_back_image.delete()
+                            kyc.selfie_image.delete()
+                            # Keep signature for future use
+                    except:
+                        pass
+                    
+                    messages.success(request, f'Collateral verified and loan listed. Market value updated to KES {collateral.agent_verified_value:,.2f}')
+                except Loan.DoesNotExist:
+                    messages.success(request, 'Collateral verified successfully.')
+                
+                return redirect('agent_panel')
+        else:
+            form = CollateralVerificationForm(instance=collateral)
+        
+        context = {
+            'form': form,
+            'collateral': collateral,
+            'max_loan_amount': collateral.calculate_max_loan_amount(),
+        }
+        return render(request, 'core/verify_collateral.html', context)
+        
+    except Exception as e:
+        logger.error(f"Collateral verification error: {str(e)}")
+        messages.error(request, 'Error verifying collateral.')
+        return redirect('agent_panel')
+
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt

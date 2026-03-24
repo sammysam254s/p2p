@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+
+{% block title %}KYC Verification - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-id-card me-2 text-primary"></i>KYC Verification</h2>
+        <p class="text-muted">Complete your identity verification to access all platform features</p>
+    </div>
+</div>
+
+<!-- KYC Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h5>Verification Status</h5>
+                {% if kyc.status == 'verified' %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        <strong>Verified!</strong> Your identity has been successfully verified.
+                        <small class="d-block mt-1">Verified on: {{ kyc.verified_at|date:"F d, Y" }}</small>
+                    </div>
+                {% elif kyc.status == 'under_review' %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-clock me-2"></i>
+                        <strong>Under Review</strong> Your documents are being reviewed.
+                        {% if kyc.verification_score > 0 %}
+                            <small class="d-block mt-1">AI Verification Score: {{ kyc.verification_score|floatformat:1 }}%</small>
+                        {% endif %}
+                    </div>
+                {% elif kyc.status == 'rejected' %}
+                    <div class="alert alert-danger">
+                        <i class="fas fa-times-circle me-2"></i>
+                        <strong>Verification Failed</strong> Please review and resubmit your documents.
+                        {% if kyc.rejection_reason %}
+                            <small class="d-block mt-1">Reason: {{ kyc.rejection_reason }}</small>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Verification Required</strong> Please complete your KYC verification to borrow money.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- KYC Form -->
+{% if can_submit %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-upload me-2"></i>Submit Verification Documents</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <!-- Personal Information -->
+                    <h6 class="text-primary mb-3">Personal Information</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.full_name.id_for_label }}" class="form-label">{{ form.full_name.label }}</label>
+                            {{ form.full_name }}
+                            {% if form.full_name.errors %}
+                                <div class="text-danger small">{{ form.full_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.id_number.id_for_label }}" class="form-label">{{ form.id_number.label }}</label>
+                            {{ form.id_number }}
+                            {% if form.id_number.errors %}
+                                <div class="text-danger small">{{ form.id_number.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="{{ form.date_of_birth.id_for_label }}" class="form-label">{{ form.date_of_birth.label }}</label>
+                            {{ form.date_of_birth }}
+                            {% if form.date_of_birth.errors %}
+                                <div class="text-danger small">{{ form.date_of_birth.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Document Images -->
+                    <h6 class="text-primary mb-3">Document Images</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.id_front_image.id_for_label }}" class="form-label">{{ form.id_front_image.label }}</label>
+                            {{ form.id_front_image }}
+                            <small class="form-text text-muted">Upload clear photo of ID front side</small>
+                            {% if form.id_front_image.errors %}
+                                <div class="text-danger small">{{ form.id_front_image.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.id_back_image.id_for_label }}" class="form-label">{{ form.id_back_image.label }}</label>
+                            {{ form.id_back_image }}
+                            <small class="form-text text-muted">Upload clear photo of ID back side</small>
+                            {% if form.id_back_image.errors %}
+                                <div class="text-danger small">{{ form.id_back_image.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.selfie_image.id_for_label }}" class="form-label">{{ form.selfie_image.label }}</label>
+                            {{ form.selfie_image }}
+                            <small class="form-text text-muted">Take a clear selfie photo</small>
+                            {% if form.selfie_image.errors %}
+                                <div class="text-danger small">{{ form.selfie_image.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ form.signature_image.id_for_label }}" class="form-label">{{ form.signature_image.label }}</label>
+                            {{ form.signature_image }}
+                            <small class="form-text text-muted">Upload image of your signature</small>
+                            {% if form.signature_image.errors %}
+                                <div class="text-danger small">{{ form.signature_image.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Guidelines -->
+                    <div class="alert alert-info mb-4">
+                        <h6><i class="fas fa-info-circle me-2"></i>Photo Guidelines:</h6>
+                        <ul class="mb-0 small">
+                            <li>Ensure all images are clear and well-lit</li>
+                            <li>ID photos should show all text clearly</li>
+                            <li>Selfie should show your face clearly without sunglasses or hat</li>
+                            <li>Signature should be on white paper with black/blue ink</li>
+                            <li>All information must match exactly</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-upload me-2"></i>Submit for Verification
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- AI Verification Results (for debugging/admin) -->
+{% if kyc.ai_verification_result and user.is_staff %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6>AI Verification Results (Admin Only)</h6>
+            </div>
+            <div class="card-body">
+                <pre class="small">{{ kyc.ai_verification_result|pprint }}</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add image preview functionality
+    const imageInputs = document.querySelectorAll('input[type="file"]');
+    
+    imageInputs.forEach(input => {
+        input.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    // Create preview if doesn't exist
+                    let preview = input.parentNode.querySelector('.image-preview');
+                    if (!preview) {
+                        preview = document.createElement('img');
+                        preview.className = 'image-preview mt-2';
+                        preview.style.maxWidth = '200px';
+                        preview.style.maxHeight = '150px';
+                        preview.style.border = '1px solid #ddd';
+                        preview.style.borderRadius = '4px';
+                        input.parentNode.appendChild(preview);
+                    }
+                    preview.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    });
+});
+</script>
+
+{% endblock %}

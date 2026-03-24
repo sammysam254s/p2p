@@ -1,0 +1,277 @@
+{% extends 'base.html' %}
+
+{% block title %}Verify Collateral - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2><i class="fas fa-shield-alt me-2 text-info"></i>Verify Collateral</h2>
+                <p class="text-muted">Inspect and verify collateral market value</p>
+            </div>
+            <a href="{% url 'agent_panel' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back to Agent Panel
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Collateral Details -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-info-circle me-2"></i>Collateral Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Item Type:</strong> {{ collateral.item_type }}</p>
+                        <p><strong>Brand/Model:</strong> {{ collateral.brand_model }}</p>
+                        <p><strong>Owner:</strong> {{ collateral.user.username }}</p>
+                        <p><strong>Owner Email:</strong> {{ collateral.user.email }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Declared Value:</strong> KES {{ collateral.market_value|floatformat:2 }}</p>
+                        <p><strong>Current Status:</strong> 
+                            <span class="badge bg-warning">{{ collateral.status|title }}</span>
+                        </p>
+                        <p><strong>Submitted:</strong> {{ collateral.created_at|date:"F d, Y H:i" }}</p>
+                        <p><strong>Max Loan (Current):</strong> KES {{ max_loan_amount|floatformat:2 }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h6><i class="fas fa-calculator me-2"></i>Loan Calculation</h6>
+            </div>
+            <div class="card-body">
+                <div class="text-center">
+                    <h6>30/50 Rule Applied</h6>
+                    <p class="small text-muted">Market Value × 0.70 × 0.50</p>
+                    <div id="calculationResult">
+                        <p><strong>Current Max Loan:</strong></p>
+                        <h5 class="text-success">KES {{ max_loan_amount|floatformat:2 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Verification Form -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-check-circle me-2"></i>Agent Verification</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" id="verificationForm">
+                    {% csrf_token %}
+                    
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-exclamation-triangle me-2"></i>Verification Instructions:</h6>
+                        <ul class="mb-0 small">
+                            <li>Physically inspect the collateral item</li>
+                            <li>Verify the brand, model, and condition</li>
+                            <li>Research current market value</li>
+                            <li>Consider depreciation and wear</li>
+                            <li>Update the market value based on your assessment</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="{{ form.agent_verified_value.id_for_label }}" class="form-label">
+                            <strong>{{ form.agent_verified_value.label }}</strong>
+                        </label>
+                        {{ form.agent_verified_value }}
+                        {% if form.agent_verified_value.errors %}
+                            <div class="text-danger small">{{ form.agent_verified_value.errors.0 }}</div>
+                        {% endif %}
+                        <div class="form-text">
+                            Enter the verified market value after physical inspection. 
+                            This will update the maximum loan amount.
+                        </div>
+                    </div>
+                    
+                    <!-- Real-time calculation display -->
+                    <div class="card bg-light mb-4">
+                        <div class="card-body">
+                            <h6>Updated Loan Calculation:</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <small class="text-muted">Verified Value</small>
+                                    <p id="verifiedValue">KES {{ collateral.market_value|floatformat:2 }}</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <small class="text-muted">After 30% Devaluation</small>
+                                    <p id="devaluedAmount">KES {{ collateral.market_value|floatformat:2 }}</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <small class="text-muted">Max Loan (50%)</small>
+                                    <p id="maxLoanAmount" class="text-success"><strong>KES {{ max_loan_amount|floatformat:2 }}</strong></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle me-2"></i>What happens after verification:</h6>
+                        <ul class="mb-0 small">
+                            <li>Collateral status will be updated to "Verified"</li>
+                            <li>Associated loan will be listed in the marketplace</li>
+                            <li>Loan contract PDF will be generated automatically</li>
+                            <li>Borrower's KYC images will be moved to the contract for security</li>
+                            <li>Lenders can start investing in the loan</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-check-circle me-2"></i>Verify Collateral & List Loan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Verification Checklist -->
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-clipboard-check me-2"></i>Verification Checklist</h6>
+            </div>
+            <div class="card-body">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="check1">
+                    <label class="form-check-label small" for="check1">
+                        Item physically inspected
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="check2">
+                    <label class="form-check-label small" for="check2">
+                        Brand/model verified
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="check3">
+                    <label class="form-check-label small" for="check3">
+                        Condition assessed
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="check4">
+                    <label class="form-check-label small" for="check4">
+                        Market value researched
+                    </label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="check5">
+                    <label class="form-check-label small" for="check5">
+                        Owner identity confirmed
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Market Value Guide -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-line me-2"></i>Market Value Guide</h6>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    <strong>Smartphones:</strong><br>
+                    • New: 90-100% of retail<br>
+                    • 1 year: 70-80%<br>
+                    • 2+ years: 50-70%<br><br>
+                    
+                    <strong>Laptops:</strong><br>
+                    • New: 85-95% of retail<br>
+                    • 1 year: 65-75%<br>
+                    • 2+ years: 45-65%<br><br>
+                    
+                    <strong>Consider:</strong><br>
+                    • Physical condition<br>
+                    • Functionality<br>
+                    • Market demand<br>
+                    • Depreciation rate
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const verifiedValueInput = document.getElementById('{{ form.agent_verified_value.id_for_label }}');
+    const verifiedValueDisplay = document.getElementById('verifiedValue');
+    const devaluedAmountDisplay = document.getElementById('devaluedAmount');
+    const maxLoanAmountDisplay = document.getElementById('maxLoanAmount');
+    const submitButton = document.querySelector('button[type="submit"]');
+    const checkboxes = document.querySelectorAll('.form-check-input');
+    
+    // Real-time calculation update
+    verifiedValueInput.addEventListener('input', function() {
+        const value = parseFloat(this.value) || 0;
+        const devaluedAmount = value * 0.70;
+        const maxLoanAmount = devaluedAmount * 0.50;
+        
+        verifiedValueDisplay.textContent = `KES ${value.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        devaluedAmountDisplay.textContent = `KES ${devaluedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        maxLoanAmountDisplay.innerHTML = `<strong>KES ${maxLoanAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>`;
+    });
+    
+    // Checklist validation
+    function updateSubmitButton() {
+        const checkedCount = document.querySelectorAll('.form-check-input:checked').length;
+        const verifiedValue = parseFloat(verifiedValueInput.value) || 0;
+        
+        if (checkedCount >= 4 && verifiedValue >= 1000) {
+            submitButton.disabled = false;
+            submitButton.className = 'btn btn-success btn-lg';
+        } else {
+            submitButton.disabled = true;
+            submitButton.className = 'btn btn-secondary btn-lg';
+        }
+    }
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSubmitButton);
+    });
+    
+    verifiedValueInput.addEventListener('input', updateSubmitButton);
+    
+    // Initial state
+    updateSubmitButton();
+    
+    // Form submission confirmation
+    document.getElementById('verificationForm').addEventListener('submit', function(e) {
+        const verifiedValue = parseFloat(verifiedValueInput.value) || 0;
+        const originalValue = {{ collateral.market_value }};
+        const difference = Math.abs(verifiedValue - originalValue);
+        const percentDifference = (difference / originalValue) * 100;
+        
+        if (percentDifference > 20) {
+            const confirmed = confirm(
+                `The verified value (KES ${verifiedValue.toLocaleString()}) differs significantly from the declared value (KES ${originalValue.toLocaleString()}). ` +
+                `Are you sure you want to proceed?`
+            );
+            
+            if (!confirmed) {
+                e.preventDefault();
+            }
+        }
+    });
+});
+</script>
+
+{% endblock %}

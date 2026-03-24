@@ -9,6 +9,16 @@ urlpatterns = [
     path('marketplace/', views.marketplace, name='marketplace'),
     path('loan/<int:loan_id>/', views.loan_detail, name='loan_detail'),
     
+    # KYC URLs
+    path('kyc/', views.kyc_verification, name='kyc_verification'),
+    
+    # Loan management URLs
+    path('loan/<int:loan_id>/pay/', views.loan_payment, name='loan_payment'),
+    path('loan/<int:loan_id>/contract/', views.download_contract, name='download_contract'),
+    
+    # Agent URLs
+    path('verify-collateral/<int:collateral_id>/', views.verify_collateral, name='verify_collateral'),
+    
     # API endpoints
     path('api/check-username/', views.check_username_api, name='check_username_api'),
     
