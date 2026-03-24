@@ -3,8 +3,8 @@
 {% block title %}Borrower Dashboard - P2P Secure-Lend{% endblock %}
 
 {% block content %}
-<!-- Mobile Hamburger Menu for Borrowers -->
-<div class="d-lg-none mb-3">
+<!-- Desktop and Mobile Navigation Menu -->
+<div class="mb-3">
     <button class="btn btn-primary w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#borrowerMobileMenu" aria-controls="borrowerMobileMenu">
         <i class="fas fa-bars me-2"></i>Borrower Menu
     </button>
@@ -88,42 +88,47 @@
     </div>
 </div>
 
-<!-- KYC Status Alert -->
+<!-- KYC Status Alert - Always Visible -->
 <div class="row mb-4">
     <div class="col-12">
+        <!-- Always show KYC button -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="fas fa-id-card me-2 text-warning"></i>KYC Verification Status</h4>
+            <a href="{% url 'kyc_verification' %}" class="btn btn-warning">
+                <i class="fas fa-id-card me-1"></i>
+                {% if kyc_verified %}View KYC Details{% else %}Complete KYC{% endif %}
+            </a>
+        </div>
+        
         {% if not kyc_verified and not is_admin %}
             {% if kyc_status == 'pending' %}
-                <div class="alert alert-warning">
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
                     <h5><i class="fas fa-exclamation-triangle me-2"></i>KYC Verification Required</h5>
-                    <p class="mb-2">You need to complete KYC verification before you can apply for loans.</p>
-                    <a href="{% url 'kyc_verification' %}" class="btn btn-warning">
-                        <i class="fas fa-id-card me-1"></i>Complete KYC Verification
-                    </a>
+                    <p class="mb-2"><strong>Important:</strong> You must complete KYC verification before applying for loans. This is a mandatory security requirement.</p>
+                    <p class="mb-0"><small>Click the "Complete KYC" button above to start the verification process.</small></p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             {% elif kyc_status == 'under_review' %}
-                <div class="alert alert-info">
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
                     <h5><i class="fas fa-clock me-2"></i>KYC Under Review</h5>
-                    <p class="mb-2">Your KYC documents are being reviewed. You'll be notified once approved.</p>
-                    <a href="{% url 'kyc_verification' %}" class="btn btn-info">
-                        <i class="fas fa-eye me-1"></i>View KYC Status
-                    </a>
+                    <p class="mb-2">Your KYC documents are being processed. Verification typically completes within 1-2 minutes.</p>
+                    <p class="mb-0"><small>You'll receive an automatic notification once approved. Refresh this page to see updates.</small></p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             {% elif kyc_status == 'rejected' %}
-                <div class="alert alert-danger">
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
                     <h5><i class="fas fa-times-circle me-2"></i>KYC Verification Failed</h5>
-                    <p class="mb-2">Your KYC verification was rejected. Please review and resubmit your documents.</p>
-                    <a href="{% url 'kyc_verification' %}" class="btn btn-danger">
-                        <i class="fas fa-redo me-1"></i>Resubmit KYC Documents
-                    </a>
+                    <p class="mb-2">Your KYC verification was rejected. Please review the requirements and resubmit your documents.</p>
+                    <p class="mb-0"><small>Common issues: Blurry images, mismatched names, or incomplete information.</small></p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             {% endif %}
         {% elif kyc_verified and not is_admin %}
-            <div class="alert alert-success">
-                <h5><i class="fas fa-check-circle me-2"></i>KYC Verified</h5>
-                <p class="mb-2">Your identity has been verified. You can now apply for loans.</p>
-                <a href="{% url 'kyc_verification' %}" class="btn btn-success btn-sm">
-                    <i class="fas fa-eye me-1"></i>View KYC Details
-                </a>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <h5><i class="fas fa-check-circle me-2"></i>KYC Verified Successfully</h5>
+                <p class="mb-2">Your identity has been verified. You can now apply for loans and access all borrower features.</p>
+                <p class="mb-0"><small>Your verification is valid for all future transactions on this platform.</small></p>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         {% endif %}
     </div>

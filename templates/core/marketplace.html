@@ -3,6 +3,76 @@
 {% block title %}Marketplace - P2P Secure-Lend{% endblock %}
 
 {% block content %}
+<!-- Desktop and Mobile Navigation Menu -->
+<div class="mb-3">
+    <button class="btn btn-success w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#lenderMobileMenu" aria-controls="lenderMobileMenu">
+        <i class="fas fa-bars me-2"></i>Lender Menu
+    </button>
+</div>
+
+<!-- Mobile Offcanvas Menu -->
+<div class="offcanvas offcanvas-start" tabindex="-1" id="lenderMobileMenu" aria-labelledby="lenderMobileMenuLabel">
+    <div class="offcanvas-header bg-success text-white">
+        <h5 class="offcanvas-title" id="lenderMobileMenuLabel">
+            <i class="fas fa-chart-line me-2"></i>{{ user.username }}
+            {% if is_admin %} (Admin){% endif %}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+        <div class="list-group list-group-flush">
+            <!-- Main Navigation -->
+            <a href="{% url 'marketplace' %}" class="list-group-item list-group-item-action active">
+                <i class="fas fa-store me-3 text-success"></i>
+                <span>Marketplace</span>
+                {% if listed_loans %}
+                    <span class="badge bg-success ms-2">{{ listed_loans|length }}</span>
+                {% endif %}
+            </a>
+            
+            <!-- My Investments -->
+            <div class="list-group-item">
+                <i class="fas fa-chart-pie me-3 text-info"></i>
+                <span>My Investments</span>
+                <div class="fw-bold text-success">KES {{ total_invested|floatformat:2 }}</div>
+            </div>
+            
+            <!-- Investment Stats -->
+            <div class="list-group-item">
+                <i class="fas fa-percentage me-3 text-primary"></i>
+                <span>Monthly Return</span>
+                <div class="fw-bold text-primary">13%</div>
+            </div>
+            
+            <!-- Available Loans -->
+            <div class="list-group-item">
+                <i class="fas fa-money-bill-wave me-3 text-warning"></i>
+                <span>Available Loans</span>
+                <div class="fw-bold text-warning">{{ listed_loans|length }} loans</div>
+            </div>
+            
+            {% if is_admin %}
+            <!-- Admin Options -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted fw-bold">ADMIN ACCESS</small>
+            </div>
+            <a href="{% url 'admin_dashboard' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-crown me-3 text-warning"></i>
+                <span>Admin Dashboard</span>
+            </a>
+            <a href="{% url 'borrower_dashboard' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-hand-holding-usd me-3 text-primary"></i>
+                <span>Borrower View</span>
+            </a>
+            <a href="{% url 'agent_panel' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-shield-alt me-3 text-info"></i>
+                <span>Agent View</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <h2><i class="fas fa-store me-2"></i>Investment Marketplace</h2>

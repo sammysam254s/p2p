@@ -15,34 +15,54 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <h5>Verification Status</h5>
+                <h5><i class="fas fa-info-circle me-2"></i>Verification Status</h5>
                 {% if kyc.status == 'verified' %}
-                    <div class="alert alert-success">
+                    <div class="alert alert-success alert-dismissible fade show">
                         <i class="fas fa-check-circle me-2"></i>
-                        <strong>Verified!</strong> Your identity has been successfully verified.
-                        <small class="d-block mt-1">Verified on: {{ kyc.verified_at|date:"F d, Y" }}</small>
+                        <strong>✅ Verified Successfully!</strong> Your identity has been verified and you can now apply for loans.
+                        <small class="d-block mt-1">Verified on: {{ kyc.verified_at|date:"F d, Y at g:i A" }}</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% elif kyc.status == 'under_review' %}
-                    <div class="alert alert-info">
+                    <div class="alert alert-info alert-dismissible fade show">
                         <i class="fas fa-clock me-2"></i>
-                        <strong>Under Review</strong> Your documents are being reviewed.
-                        {% if kyc.verification_score > 0 %}
-                            <small class="d-block mt-1">AI Verification Score: {{ kyc.verification_score|floatformat:1 }}%</small>
-                        {% endif %}
+                        <strong>⏳ Processing Your Verification</strong> Your documents are being processed automatically.
+                        <small class="d-block mt-1">
+                            Expected completion: Within 1-2 minutes. Refresh this page to see updates.
+                            {% if kyc.verification_score > 0 %}
+                                <br>Current AI Score: {{ kyc.verification_score|floatformat:1 }}%
+                            {% endif %}
+                        </small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% elif kyc.status == 'rejected' %}
-                    <div class="alert alert-danger">
+                    <div class="alert alert-danger alert-dismissible fade show">
                         <i class="fas fa-times-circle me-2"></i>
-                        <strong>Verification Failed</strong> Please review and resubmit your documents.
-                        {% if kyc.rejection_reason %}
-                            <small class="d-block mt-1">Reason: {{ kyc.rejection_reason }}</small>
+                        <strong>❌ Verification Failed</strong> Please review the requirements and resubmit your documents.
+                        {% if kyc.ai_verification_result.message %}
+                            <small class="d-block mt-1">Issue: {{ kyc.ai_verification_result.message }}</small>
                         {% endif %}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% else %}
-                    <div class="alert alert-warning">
+                    <div class="alert alert-warning alert-dismissible fade show">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>Verification Required</strong> Please complete your KYC verification to borrow money.
+                        <strong>⚠️ Verification Required</strong> Complete KYC verification to unlock loan applications and all borrower features.
+                        <small class="d-block mt-1">This is a mandatory security requirement for all borrowers.</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
+                {% endif %}
+                
+                <!-- Verification Tips -->
+                {% if verification_tips %}
+                <div class="mt-3">
+                    <h6><i class="fas fa-lightbulb me-2 text-warning"></i>Verification Tips:</h6>
+                    <ul class="mb-0">
+                        {% for tip in verification_tips %}
+                        <li><small>{{ tip }}</small></li>
+                        {% endfor %}
+                    </ul>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -200,5 +220,30 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<!-- Auto-refresh for under_review status -->
+{% if kyc.status == 'under_review' %}
+<script>
+// Auto-refresh page every 30 seconds when KYC is under review
+setTimeout(function() {
+    location.reload();
+}, 30000);
+
+// Show countdown timer
+let countdown = 30;
+const countdownElement = document.createElement('div');
+countdownElement.className = 'alert alert-info mt-3';
+countdownElement.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Page will refresh in <span id="countdown">30</span> seconds to check for updates...';
+document.querySelector('.card-body').appendChild(countdownElement);
+
+const timer = setInterval(function() {
+    countdown--;
+    document.getElementById('countdown').textContent = countdown;
+    if (countdown <= 0) {
+        clearInterval(timer);
+    }
+}, 1000);
+</script>
+{% endif %}
 
 {% endblock %}

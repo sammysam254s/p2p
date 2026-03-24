@@ -331,8 +331,13 @@ def borrower_dashboard(request):
         except Exception as e:
             logger.error(f"Error calculating totals: {str(e)}")
         
-        # Handle loan application (only if KYC verified)
-        if request.method == 'POST' and kyc_verified:
+        # Handle loan application (strict KYC enforcement)
+        if request.method == 'POST':
+            # STRICT KYC CHECK - Block all loan applications without verified KYC
+            if not kyc_verified and user_role != 'admin':
+                messages.error(request, 'KYC verification is required before applying for loans. Please complete your KYC verification first.')
+                return redirect('kyc_verification')
+            
             collateral_form = CollateralForm(request.POST)
             loan_form = LoanApplicationForm(request.POST)
             
@@ -422,7 +427,6 @@ def borrower_dashboard(request):
             return redirect('home')
 
 
-@login_required
 @login_required
 def agent_panel(request):
     """Station agent panel for collateral verification"""
@@ -826,7 +830,6 @@ def admin_borrower_view(request):
 
 
 @login_required
-@login_required
 def admin_lender_view(request):
     """Admin view of lender marketplace"""
     try:
@@ -869,7 +872,6 @@ def admin_lender_view(request):
         return redirect('admin_dashboard')
 
 
-@login_required
 @login_required
 def admin_agent_view(request):
     """Admin view of agent panel"""
@@ -918,7 +920,6 @@ def admin_agent_view(request):
         messages.error(request, 'Error loading agent view.')
         return redirect('admin_dashboard')
 
-@login_required
 @login_required
 def admin_users_management(request):
     """Admin view to manage all users"""
@@ -1018,7 +1019,6 @@ def admin_users_management(request):
 
 
 @login_required
-@login_required
 def admin_commissions_payouts(request):
     """Admin view to manage agent commissions and payouts"""
     try:
@@ -1047,7 +1047,6 @@ def admin_commissions_payouts(request):
 
 
 @login_required
-@login_required
 def admin_payments_management(request):
     """Admin view to manage loan payments and next payment tracking"""
     try:
@@ -1074,7 +1073,6 @@ def admin_payments_management(request):
         return redirect('admin_dashboard')
 
 
-@login_required
 @login_required
 def admin_wallet_management(request):
     """Admin view to manage user wallets"""
@@ -1125,7 +1123,7 @@ def admin_wallet_management(request):
 
 @login_required
 def kyc_verification(request):
-    """KYC verification page for all users"""
+    """Fast KYC verification with automatic processing"""
     try:
         # Get or create KYC verification record
         kyc, created = KYCVerification.objects.get_or_create(
@@ -1148,55 +1146,93 @@ def kyc_verification(request):
                 kyc.status = 'under_review'
                 kyc.save()
                 
-                # Run AI verification
+                # Immediate automatic verification for faster processing
                 try:
                     if KYC_SERVICE_AVAILABLE and kyc_ai_service:
+                        # Run AI verification immediately
                         verification_result = kyc_ai_service.verify_kyc_submission(kyc)
+                        logger.info(f"KYC AI verification result for {request.user.username}: {verification_result}")
                     else:
-                        # Fallback verification when AI service is not available
-                        verification_result = {
-                            'overall_score': 95, 
-                            'status': 'verified',
-                            'passed': True,
-                            'message': 'Manual verification completed'
-                        }
+                        # Fast fallback verification when AI service is not available
+                        # Check basic requirements: name and ID number must be provided
+                        if kyc.full_name and kyc.id_number and len(kyc.id_number) >= 6:
+                            verification_result = {
+                                'overall_score': 95, 
+                                'status': 'verified',
+                                'passed': True,
+                                'message': 'Basic verification completed - all required fields provided',
+                                'details': 'Name and ID number validation passed'
+                            }
+                        else:
+                            verification_result = {
+                                'overall_score': 30, 
+                                'status': 'rejected',
+                                'passed': False,
+                                'message': 'Missing required information',
+                                'details': 'Please provide complete name and valid ID number'
+                            }
+                    
                     kyc.ai_verification_result = verification_result
                     kyc.verification_score = verification_result.get('overall_score', 0)
                     
-                    # Auto-approve if score is high enough
-                    if verification_result.get('passed', False) and verification_result.get('overall_score', 0) >= 85:
+                    # Auto-approve if score is high enough (faster processing)
+                    if verification_result.get('passed', False) and verification_result.get('overall_score', 0) >= 80:
                         kyc.status = 'verified'
                         kyc.verified_at = timezone.now()
-                        messages.success(request, 'KYC verification completed successfully! You can now apply for loans.')
+                        messages.success(request, 
+                            'KYC verification completed successfully! ✅ You can now apply for loans. '
+                            'Your identity has been verified and all borrower features are now available.')
+                        logger.info(f"KYC auto-approved for {request.user.username} with score {verification_result.get('overall_score')}")
                     else:
-                        kyc.status = 'under_review'
-                        messages.info(request, 'KYC submitted for review. You will be notified once verified.')
+                        kyc.status = 'rejected'
+                        error_msg = verification_result.get('message', 'Verification failed')
+                        messages.error(request, 
+                            f'KYC verification failed: {error_msg}. '
+                            'Please check your information and try again. '
+                            'Ensure your name matches your ID document exactly.')
+                        logger.warning(f"KYC rejected for {request.user.username}: {error_msg}")
                     
                     kyc.save()
                     
                 except Exception as e:
-                    logger.error(f"AI verification error: {str(e)}")
+                    logger.error(f"KYC verification error for {request.user.username}: {str(e)}")
+                    # Fallback to manual review on error
                     kyc.status = 'under_review'
                     kyc.save()
-                    messages.info(request, 'KYC submitted for manual review.')
+                    messages.info(request, 
+                        'KYC submitted for review. Our team will verify your documents within 24 hours. '
+                        'You will receive a notification once the verification is complete.')
                 
                 return redirect('kyc_verification')
             else:
-                # Form has errors
-                messages.error(request, 'Please correct the errors below and try again.')
+                # Form has errors - show detailed error messages
+                error_messages = []
+                for field, errors in form.errors.items():
+                    for error in errors:
+                        error_messages.append(f"{field.replace('_', ' ').title()}: {error}")
+                
+                messages.error(request, 
+                    'Please correct the following errors: ' + '; '.join(error_messages))
         else:
             form = KYCVerificationForm(instance=kyc)
         
+        # Add helpful context for the user
         context = {
             'form': form,
             'kyc': kyc,
             'can_submit': kyc.status in ['pending', 'rejected'],
+            'verification_tips': [
+                'Ensure your full name matches your ID document exactly',
+                'Provide a clear, valid national ID number',
+                'Upload clear, readable photos of your ID documents',
+                'Make sure all information is accurate and complete'
+            ]
         }
         return render(request, 'core/kyc_verification.html', context)
         
     except Exception as e:
         logger.error(f"KYC verification error: {str(e)}")
-        messages.error(request, f'Error loading KYC verification: {str(e)}')
+        messages.error(request, f'Error loading KYC verification. Please try again or contact support if the problem persists.')
         
         # Create a fallback context
         try:
@@ -1214,6 +1250,7 @@ def kyc_verification(request):
                 'form': form,
                 'kyc': kyc,
                 'can_submit': True,
+                'verification_tips': []
             }
             return render(request, 'core/kyc_verification.html', context)
         except Exception as fallback_error:

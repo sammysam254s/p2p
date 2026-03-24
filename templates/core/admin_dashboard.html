@@ -3,6 +3,89 @@
 {% block title %}Admin Dashboard - P2P Secure-Lend{% endblock %}
 
 {% block content %}
+<div class="container-fluid py-4">
+    <!-- Desktop and Mobile Navigation Menu -->
+    <div class="mb-3">
+        <button class="btn btn-warning w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#adminMobileMenu" aria-controls="adminMobileMenu">
+            <i class="fas fa-bars me-2"></i>Admin Menu
+        </button>
+    </div>
+    
+    <!-- Include Mobile Menu -->
+    {% include 'core/admin_mobile_menu.html' %}
+    <div class="offcanvas-body p-0">
+        <div class="list-group list-group-flush">
+            <!-- Dashboard Views -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted fw-bold">DASHBOARD VIEWS</small>
+            </div>
+            <a href="{% url 'admin_dashboard' %}" class="list-group-item list-group-item-action active">
+                <i class="fas fa-crown me-3 text-warning"></i>
+                <span>Admin Dashboard</span>
+            </a>
+            <a href="{% url 'borrower_dashboard' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-hand-holding-usd me-3 text-primary"></i>
+                <span>Borrower View</span>
+            </a>
+            <a href="{% url 'marketplace' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-chart-line me-3 text-success"></i>
+                <span>Lender View</span>
+            </a>
+            <a href="{% url 'agent_panel' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-shield-alt me-3 text-info"></i>
+                <span>Agent View</span>
+            </a>
+            
+            <!-- Admin Management -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted fw-bold">ADMIN MANAGEMENT</small>
+            </div>
+            <a href="{% url 'admin_users_management' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-users me-3 text-primary"></i>
+                <span>Users Management</span>
+            </a>
+            <a href="{% url 'admin_borrower_view' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-hand-holding-usd me-3 text-info"></i>
+                <span>Borrowers</span>
+            </a>
+            <a href="{% url 'admin_lender_view' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-chart-line me-3 text-success"></i>
+                <span>Lenders</span>
+            </a>
+            <a href="{% url 'admin_agent_view' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-shield-alt me-3 text-warning"></i>
+                <span>Agents</span>
+            </a>
+            
+            <!-- Financial Management -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted fw-bold">FINANCIAL MANAGEMENT</small>
+            </div>
+            <a href="{% url 'admin_payments_management' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-credit-card me-3 text-success"></i>
+                <span>Payments</span>
+            </a>
+            <a href="{% url 'admin_commissions_payouts' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-percentage me-3 text-info"></i>
+                <span>Commissions</span>
+            </a>
+            <a href="{% url 'admin_wallet_management' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-wallet me-3 text-primary"></i>
+                <span>Wallets</span>
+            </a>
+            
+            <!-- System -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted fw-bold">SYSTEM</small>
+            </div>
+            <a href="/admin/django/" class="list-group-item list-group-item-action">
+                <i class="fas fa-cogs me-3 text-danger"></i>
+                <span>Django Admin</span>
+            </a>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <h2><i class="fas fa-crown me-2 text-warning"></i>Administrator Dashboard</h2>
