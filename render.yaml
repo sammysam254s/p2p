@@ -10,7 +10,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
-        value: false
+        value: true
       - key: SUPABASE_URL
         value: https://ffxdkifwaxgaojlyppmg.supabase.co
       - key: SUPABASE_ANON_KEY
