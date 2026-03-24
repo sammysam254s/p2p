@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+
+{% block title %}Station Agent Panel - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-shield-alt me-2"></i>Station Agent Panel</h2>
+        <p class="text-muted">Verify and receive collateral items from borrowers</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock me-2"></i>Pending Collateral Verification</h5>
+            </div>
+            <div class="card-body">
+                {% if pending_collaterals %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Borrower</th>
+                                    <th>Item Type</th>
+                                    <th>Brand & Model</th>
+                                    <th>Market Value</th>
+                                    <th>Max Loan Amount</th>
+                                    <th>Submitted</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for collateral in pending_collaterals %}
+                                    <tr>
+                                        <td>
+                                            <div>
+                                                <strong>{{ collateral.user.username }}</strong>
+                                                <br>
+                                                <small class="text-muted">{{ collateral.user.phone_number }}</small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-secondary">{{ collateral.item_type }}</span>
+                                        </td>
+                                        <td>{{ collateral.brand_model }}</td>
+                                        <td>
+                                            <strong>KES {{ collateral.market_value|floatformat:2 }}</strong>
+                                        </td>
+                                        <td>
+                                            <strong class="text-success">KES {{ collateral.calculate_max_loan_amount|floatformat:2 }}</strong>
+                                            <br>
+                                            <small class="text-muted">(30/50 rule)</small>
+                                        </td>
+                                        <td>
+                                            {{ collateral.created_at|date:"M d, Y" }}
+                                            <br>
+                                            <small class="text-muted">{{ collateral.created_at|time:"H:i" }}</small>
+                                        </td>
+                                        <td>
+                                            <form method="post" style="display: inline;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="collateral_id" value="{{ collateral.id }}">
+                                                <button type="submit" class="btn btn-success btn-sm" 
+                                                        onclick="return confirm('Confirm that you have physically received and verified this item?')">
+                                                    <i class="fas fa-check me-1"></i>Verify & Receive
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                        <h4 class="text-muted">No Pending Verifications</h4>
+                        <p class="text-muted">All collateral items have been processed</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instructions Card -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-info-circle me-2"></i>Verification Process</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Before Verification:</h6>
+                        <ul>
+                            <li>Physically inspect the item for authenticity</li>
+                            <li>Check for any damage or defects</li>
+                            <li>Verify the item matches the description</li>
+                            <li>Confirm the borrower's identity</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>After Verification:</h6>
+                        <ul>
+                            <li>Store the item securely</li>
+                            <li>Issue a receipt to the borrower</li>
+                            <li>The loan will be listed on the marketplace</li>
+                            <li>Borrower will be notified via SMS/email</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning mt-3">
+                    <strong>Important:</strong> Only verify items that you have physically received and confirmed. 
+                    Once verified, the loan becomes available for funding on the marketplace.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh page every 30 seconds to check for new submissions
+setTimeout(function() {
+    location.reload();
+}, 30000);
+
+// Add confirmation dialog for verification
+document.addEventListener('DOMContentLoaded', function() {
+    const verifyButtons = document.querySelectorAll('button[type="submit"]');
+    verifyButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            const row = this.closest('tr');
+            const borrower = row.querySelector('td:first-child strong').textContent;
+            const item = row.querySelector('td:nth-child(3)').textContent;
+            
+            if (!confirm(`Confirm verification for ${borrower}'s ${item}?\n\nThis action cannot be undone.`)) {
+                e.preventDefault();
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

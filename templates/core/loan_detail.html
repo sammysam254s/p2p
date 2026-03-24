@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+
+{% block title %}Loan #{{ loan.id }} Details - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    {% if user.role == 'borrower' %}
+                        <a href="{% url 'borrower_dashboard' %}">Dashboard</a>
+                    {% elif user.role == 'lender' %}
+                        <a href="{% url 'marketplace' %}">Marketplace</a>
+                    {% else %}
+                        <a href="{% url 'home' %}">Home</a>
+                    {% endif %}
+                </li>
+                <li class="breadcrumb-item active">Loan #{{ loan.id }}</li>
+            </ol>
+        </nav>
+        
+        <h2><i class="fas fa-file-contract me-2"></i>Loan #{{ loan.id }} Details</h2>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Loan Overview -->
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle me-2"></i>Loan Overview</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Borrower:</strong></td>
+                                <td>{{ loan.borrower.username }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Principal Amount:</strong></td>
+                                <td>KES {{ loan.principal_amount|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Interest Rate:</strong></td>
+                                <td>{{ loan.interest_rate }}% per month</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Duration:</strong></td>
+                                <td>{{ loan.duration_months }} months</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td><span class="badge status-{{ loan.status }}">{{ loan.get_status_display }}</span></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Created:</strong></td>
+                                <td>{{ loan.created_at|date:"M d, Y H:i" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Platform Fee:</strong></td>
+                                <td>KES {{ loan.calculate_platform_fee|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Insurance Fee:</strong></td>
+                                <td>KES {{ loan.calculate_insurance_fee|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Monthly Interest:</strong></td>
+                                <td>KES {{ loan.calculate_monthly_interest|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Total Repayment:</strong></td>
+                                <td><strong class="text-primary">KES {{ loan.calculate_total_repayment|floatformat:2 }}</strong></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collateral Details -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-shield-alt me-2"></i>Collateral Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Item Information</h6>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Type:</strong></td>
+                                <td>{{ loan.collateral.item_type }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Brand & Model:</strong></td>
+                                <td>{{ loan.collateral.brand_model }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Market Value:</strong></td>
+                                <td>KES {{ loan.collateral.market_value|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Max Loan Amount:</strong></td>
+                                <td>KES {{ loan.collateral.calculate_max_loan_amount|floatformat:2 }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Verification Status</h6>
+                        <table class="table table-borderless">
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td><span class="badge bg-{{ loan.collateral.status|yesno:'success,warning,secondary' }}">
+                                    {{ loan.collateral.get_status_display }}
+                                </span></td>
+                            </tr>
+                            {% if loan.collateral.verification_date %}
+                            <tr>
+                                <td><strong>Verified:</strong></td>
+                                <td>{{ loan.collateral.verification_date|date:"M d, Y H:i" }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td><strong>Loan-to-Value:</strong></td>
+                                <td>{{ loan.principal_amount|div:loan.collateral.market_value|mul:100|floatformat:1 }}%</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Investment History -->
+        {% if investments %}
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-history me-2"></i>Investment History</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Investor</th>
+                                <th>Amount</th>
+                                <th>Date</th>
+                                <th>Share</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for investment in investments %}
+                            <tr>
+                                <td>{{ investment.lender.username }}</td>
+                                <td>KES {{ investment.amount_invested|floatformat:2 }}</td>
+                                <td>{{ investment.date|date:"M d, Y H:i" }}</td>
+                                <td>{{ investment.amount_invested|div:loan.principal_amount|mul:100|floatformat:1 }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Funding Status -->
+    <div class="col-md-4">
+        {% if loan.status == 'listed' %}
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h6><i class="fas fa-chart-pie me-2"></i>Funding Status</h6>
+            </div>
+            <div class="card-body text-center">
+                <div class="mb-3">
+                    <h2 class="text-primary">{{ loan.get_funding_percentage|floatformat:1 }}%</h2>
+                    <p class="text-muted">Funded</p>
+                </div>
+                
+                <div class="progress mb-3" style="height: 20px;">
+                    <div class="progress-bar bg-success" 
+                         style="width: {{ loan.get_funding_percentage }}%"></div>
+                </div>
+                
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h6>KES {{ loan.funded_amount|floatformat:2 }}</h6>
+                        <small class="text-muted">Funded</small>
+                    </div>
+                    <div class="col-6">
+                        <h6>KES {{ loan.principal_amount|sub:loan.funded_amount|floatformat:2 }}</h6>
+                        <small class="text-muted">Remaining</small>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="text-center">
+                    <h6 class="text-warning">{{ loan.get_days_remaining }} days remaining</h6>
+                    <small class="text-muted">Funding deadline</small>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Loan Calculator -->
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-calculator me-2"></i>Repayment Breakdown</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td>Principal Amount:</td>
+                        <td class="text-end">KES {{ loan.principal_amount|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Interest ({{ loan.interest_rate }}% × {{ loan.duration_months }} months):</td>
+                        <td class="text-end">KES {{ loan.calculate_monthly_interest|mul:loan.duration_months|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Platform Fee (1%):</td>
+                        <td class="text-end">KES {{ loan.calculate_platform_fee|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Insurance Fee (1%):</td>
+                        <td class="text-end">KES {{ loan.calculate_insurance_fee|floatformat:2 }}</td>
+                    </tr>
+                    <tr class="table-primary">
+                        <td><strong>Total Repayment:</strong></td>
+                        <td class="text-end"><strong>KES {{ loan.calculate_total_repayment|floatformat:2 }}</strong></td>
+                    </tr>
+                </table>
+                
+                <div class="alert alert-info mt-3">
+                    <small><strong>Monthly Payment:</strong> KES {{ loan.calculate_total_repayment|div:loan.duration_months|floatformat:2 }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

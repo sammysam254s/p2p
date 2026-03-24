@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+
+{% block title %}Welcome - P2P Secure-Lend Kenya{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section">
+    <div class="container text-center">
+        <h1 class="display-4 mb-4">
+            <i class="fas fa-leaf me-3"></i>P2P Secure-Lend Kenya
+        </h1>
+        <p class="lead mb-4">
+            Bridging digital lending with physical security. Get loans backed by collateral or invest in secured opportunities.
+        </p>
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <a href="{% url 'register' %}" class="btn btn-light btn-lg w-100">
+                            <i class="fas fa-user-plus me-2"></i>Get Started
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <a href="{% url 'login' %}" class="btn btn-outline-light btn-lg w-100">
+                            <i class="fas fa-sign-in-alt me-2"></i>Sign In
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <a href="#how-it-works" class="btn btn-outline-light btn-lg w-100">
+                            <i class="fas fa-info-circle me-2"></i>Learn More
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="container mb-5">
+    <div class="row text-center mb-5">
+        <div class="col-12">
+            <h2 class="text-primary mb-4">Why Choose P2P Secure-Lend?</h2>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 text-center">
+                <div class="card-body">
+                    <i class="fas fa-shield-alt feature-icon"></i>
+                    <h5 class="card-title">100% Secured</h5>
+                    <p class="card-text">All loans are backed by physical collateral worth at least 200% of the loan amount, ensuring maximum security for lenders.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 text-center">
+                <div class="card-body">
+                    <i class="fas fa-percentage feature-icon"></i>
+                    <h5 class="card-title">High Returns</h5>
+                    <p class="card-text">Earn 13% monthly interest on your investments. Our transparent fee structure ensures you know exactly what you'll earn.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 text-center">
+                <div class="card-body">
+                    <i class="fas fa-clock feature-icon"></i>
+                    <h5 class="card-title">Quick Process</h5>
+                    <p class="card-text">Get your loan approved in minutes. Our streamlined verification process through station agents ensures fast turnaround.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- How It Works Section -->
+<div id="how-it-works" class="bg-light py-5">
+    <div class="container">
+        <div class="row text-center mb-5">
+            <div class="col-12">
+                <h2 class="text-primary mb-4">How It Works</h2>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- For Borrowers -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-hand-holding-usd me-2"></i>For Borrowers</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="list-group list-group-flush">
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-primary rounded-pill me-3">1</span>
+                                Submit your collateral details and loan application
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-primary rounded-pill me-3">2</span>
+                                Visit a station agent to verify your collateral
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-primary rounded-pill me-3">3</span>
+                                Your loan gets listed on the marketplace
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-primary rounded-pill me-3">4</span>
+                                Receive funds once fully funded (within 7 days)
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- For Lenders -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h5><i class="fas fa-chart-line me-2"></i>For Lenders</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="list-group list-group-flush">
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-success rounded-pill me-3">1</span>
+                                Browse verified loan opportunities on the marketplace
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-success rounded-pill me-3">2</span>
+                                Review collateral details and loan terms
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-success rounded-pill me-3">3</span>
+                                Invest any amount from KES 100 upwards
+                            </li>
+                            <li class="list-group-item d-flex align-items-center">
+                                <span class="badge bg-success rounded-pill me-3">4</span>
+                                Earn 13% monthly returns on your investment
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Section -->
+<div class="container py-5">
+    <div class="row text-center">
+        <div class="col-md-3 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="text-primary">13%</h3>
+                    <p class="text-muted">Monthly Interest</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="text-success">200%</h3>
+                    <p class="text-muted">Collateral Coverage</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="text-info">7</h3>
+                    <p class="text-muted">Days Funding Window</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="text-warning">KES 100</h3>
+                    <p class="text-muted">Minimum Investment</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CTA Section -->
+<div class="bg-primary text-white py-5">
+    <div class="container text-center">
+        <h3 class="mb-4">Ready to Get Started?</h3>
+        <p class="lead mb-4">Join thousands of Kenyans who trust P2P Secure-Lend for their financial needs.</p>
+        <a href="{% url 'register' %}" class="btn btn-light btn-lg">
+            <i class="fas fa-rocket me-2"></i>Create Account Now
+        </a>
+    </div>
+</div>
+
+{% endblock %}

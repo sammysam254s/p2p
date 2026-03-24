@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+
+{% block title %}Marketplace - P2P Secure-Lend{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="fas fa-store me-2"></i>Investment Marketplace</h2>
+        <p class="text-muted">Invest in secured loans and earn 13% monthly returns</p>
+    </div>
+</div>
+
+<!-- Investment Summary -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-chart-line fa-2x text-success mb-2"></i>
+                <h5>Available Loans</h5>
+                <h3 class="text-success">{{ listed_loans|length }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-percentage fa-2x text-primary mb-2"></i>
+                <h5>Interest Rate</h5>
+                <h3 class="text-primary">13% <small>per month</small></h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-shield-alt fa-2x text-info mb-2"></i>
+                <h5>Security</h5>
+                <h3 class="text-info">100% <small>collateralized</small></h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Available Loans -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-coins me-2"></i>Available Investment Opportunities</h5>
+            </div>
+            <div class="card-body">
+                {% if listed_loans %}
+                    <div class="row">
+                        {% for loan in listed_loans %}
+                            <div class="col-md-6 col-lg-4 mb-4">
+                                <div class="card loan-card h-100">
+                                    <div class="card-header bg-primary text-white">
+                                        <h6 class="mb-0">
+                                            <i class="fas fa-lock me-2"></i>Loan #{{ loan.id }}
+                                        </h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <!-- Collateral Info -->
+                                        <div class="mb-3">
+                                            <h6 class="text-muted">Collateral</h6>
+                                            <p class="mb-1"><strong>{{ loan.collateral.brand_model }}</strong></p>
+                                            <small class="text-muted">{{ loan.collateral.item_type }}</small>
+                                        </div>
+                                        
+                                        <!-- Loan Details -->
+                                        <div class="row mb-3">
+                                            <div class="col-6">
+                                                <small class="text-muted">Amount Needed</small>
+                                                <h5 class="text-primary">KES {{ loan.principal_amount|floatformat:2 }}</h5>
+                                            </div>
+                                            <div class="col-6">
+                                                <small class="text-muted">Duration</small>
+                                                <h5>{{ loan.duration_months }} months</h5>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Funding Progress -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <small class="text-muted">Funding Progress</small>
+                                                <small class="text-muted">{{ loan.get_funding_percentage|floatformat:1 }}%</small>
+                                            </div>
+                                            <div class="progress mb-2">
+                                                <div class="progress-bar bg-success" 
+                                                     style="width: {{ loan.get_funding_percentage }}%"></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small>KES {{ loan.funded_amount|floatformat:2 }} funded</small>
+                                                <small>{{ loan.get_days_remaining }} days left</small>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Investment Returns -->
+                                        <div class="alert alert-success">
+                                            <small><strong>Expected Returns:</strong></small>
+                                            <br>
+                                            <small>Monthly: KES {{ loan.calculate_monthly_interest|floatformat:2 }}</small>
+                                            <br>
+                                            <small>Total: KES {{ loan.calculate_total_repayment|floatformat:2 }}</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="card-footer">
+                                        {% if loan.get_funding_percentage < 100 %}
+                                            <form method="post">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="loan_id" value="{{ loan.id }}">
+                                                <div class="input-group mb-2">
+                                                    <span class="input-group-text">KES</span>
+                                                    <input type="number" name="investment_amount" 
+                                                           class="form-control" placeholder="Amount" 
+                                                           min="100" step="0.01" 
+                                                           max="{{ loan.principal_amount|add:0|sub:loan.funded_amount }}" required>
+                                                </div>
+                                                <button type="submit" class="btn btn-success w-100">
+                                                    <i class="fas fa-hand-holding-usd me-2"></i>Invest Now
+                                                </button>
+                                            </form>
+                                        {% else %}
+                                            <button class="btn btn-secondary w-100" disabled>
+                                                <i class="fas fa-check me-2"></i>Fully Funded
+                                            </button>
+                                        {% endif %}
+                                        
+                                        <a href="{% url 'loan_detail' loan.id %}" 
+                                           class="btn btn-outline-primary w-100 mt-2">
+                                            <i class="fas fa-eye me-2"></i>View Details
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-search fa-4x text-muted mb-3"></i>
+                        <h4 class="text-muted">No Investment Opportunities</h4>
+                        <p class="text-muted">Check back later for new loan listings</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Investment Tips -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-lightbulb me-2"></i>Investment Tips</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-shield-alt text-success me-2"></i>Security</h6>
+                        <p class="small">All loans are backed by physical collateral worth at least 200% of the loan amount.</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-clock text-warning me-2"></i>Timing</h6>
+                        <p class="small">Loans have a 7-day funding window. Invest early to secure your position.</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-chart-line text-primary me-2"></i>Returns</h6>
+                        <p class="small">Earn 13% monthly interest plus platform fees. Returns paid monthly.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh marketplace every 60 seconds
+setTimeout(function() {
+    location.reload();
+}, 60000);
+
+// Investment amount validation
+document.addEventListener('DOMContentLoaded', function() {
+    const investmentForms = document.querySelectorAll('form[method="post"]');
+    
+    investmentForms.forEach(form => {
+        const amountInput = form.querySelector('input[name="investment_amount"]');
+        if (amountInput) {
+            amountInput.addEventListener('input', function() {
+                const amount = parseFloat(this.value) || 0;
+                const max = parseFloat(this.getAttribute('max')) || 0;
+                
+                if (amount > max) {
+                    this.setCustomValidity(`Maximum investment: KES ${max.toFixed(2)}`);
+                } else if (amount < 100) {
+                    this.setCustomValidity('Minimum investment: KES 100');
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+        }
+    });
+});
+</script>
+{% endblock %}
