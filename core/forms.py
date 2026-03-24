@@ -23,22 +23,6 @@ class KYCVerificationForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date'
             }),
-            'id_front_image': forms.FileInput(attrs={
-                'class': 'form-control',
-                'accept': 'image/*'
-            }),
-            'id_back_image': forms.FileInput(attrs={
-                'class': 'form-control',
-                'accept': 'image/*'
-            }),
-            'selfie_image': forms.FileInput(attrs={
-                'class': 'form-control',
-                'accept': 'image/*'
-            }),
-            'signature_image': forms.FileInput(attrs={
-                'class': 'form-control',
-                'accept': 'image/*'
-            }),
         }
         labels = {
             'full_name': 'Full Name (as on ID)',
@@ -49,6 +33,53 @@ class KYCVerificationForm(forms.ModelForm):
             'selfie_image': 'Selfie Photo',
             'signature_image': 'Signature Image',
         }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Check if Pillow is available for file fields
+        try:
+            from PIL import Image
+            pillow_available = True
+        except ImportError:
+            pillow_available = False
+        
+        if pillow_available:
+            # Use FileInput for image fields when Pillow is available
+            self.fields['id_front_image'].widget = forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            })
+            self.fields['id_back_image'].widget = forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            })
+            self.fields['selfie_image'].widget = forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            })
+            self.fields['signature_image'].widget = forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            })
+        else:
+            # Use TextInput for image paths when Pillow is not available
+            self.fields['id_front_image'].widget = forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Image path or URL'
+            })
+            self.fields['id_back_image'].widget = forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Image path or URL'
+            })
+            self.fields['selfie_image'].widget = forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Image path or URL'
+            })
+            self.fields['signature_image'].widget = forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Image path or URL'
+            })
     
     def clean_id_number(self):
         id_number = self.cleaned_data.get('id_number')
