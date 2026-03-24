@@ -9,6 +9,9 @@ urlpatterns = [
     path('marketplace/', views.marketplace, name='marketplace'),
     path('loan/<int:loan_id>/', views.loan_detail, name='loan_detail'),
     
+    # API endpoints
+    path('api/check-username/', views.check_username_api, name='check_username_api'),
+    
     # Admin URLs
     path('admin-dashboard/', views.admin_dashboard, name='admin_dashboard'),
     path('admin/borrowers/', views.admin_borrower_view, name='admin_borrower_view'),

@@ -13,13 +13,31 @@
                     <p class="text-muted">Join P2P Secure-Lend Kenya</p>
                 </div>
 
-                <form method="post">
+                <!-- Loading Spinner -->
+                <div id="registerLoader" class="text-center mb-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Creating your account...</p>
+                </div>
+
+                <form method="post" id="registerForm">
                     {% csrf_token %}
                     
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.username.id_for_label }}" class="form-label">Username</label>
-                            {{ form.username }}
+                            <div class="input-group">
+                                {{ form.username }}
+                                <span class="input-group-text" id="usernameStatus">
+                                    <i class="fas fa-user text-muted"></i>
+                                </span>
+                            </div>
+                            <div id="usernameHelp" class="form-text">Choose a unique username</div>
+                            <div id="usernameSuggestions" class="mt-2" style="display: none;">
+                                <small class="text-muted">Suggestions:</small>
+                                <div id="suggestionsList" class="mt-1"></div>
+                            </div>
                             {% if form.username.errors %}
                                 <div class="text-danger small">{{ form.username.errors.0 }}</div>
                             {% endif %}
@@ -27,7 +45,10 @@
                         
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.email.id_for_label }}" class="form-label">Email</label>
-                            {{ form.email }}
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                                {{ form.email }}
+                            </div>
                             {% if form.email.errors %}
                                 <div class="text-danger small">{{ form.email.errors.0 }}</div>
                             {% endif %}
@@ -50,7 +71,10 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.phone_number.id_for_label }}" class="form-label">Phone Number</label>
-                            {{ form.phone_number }}
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-phone"></i></span>
+                                {{ form.phone_number }}
+                            </div>
                             <div class="form-text">M-Pesa number (e.g., 254712345678)</div>
                             {% if form.phone_number.errors %}
                                 <div class="text-danger small">{{ form.phone_number.errors.0 }}</div>
@@ -59,7 +83,10 @@
                         
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.national_id.id_for_label }}" class="form-label">National ID</label>
-                            {{ form.national_id }}
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-id-card"></i></span>
+                                {{ form.national_id }}
+                            </div>
                             {% if form.national_id.errors %}
                                 <div class="text-danger small">{{ form.national_id.errors.0 }}</div>
                             {% endif %}
@@ -69,7 +96,13 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.password1.id_for_label }}" class="form-label">Password</label>
-                            {{ form.password1 }}
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                                {{ form.password1 }}
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword1">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
                             {% if form.password1.errors %}
                                 <div class="text-danger small">{{ form.password1.errors.0 }}</div>
                             {% endif %}
@@ -77,14 +110,20 @@
                         
                         <div class="col-md-6 mb-3">
                             <label for="{{ form.password2.id_for_label }}" class="form-label">Confirm Password</label>
-                            {{ form.password2 }}
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                                {{ form.password2 }}
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword2">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
                             {% if form.password2.errors %}
                                 <div class="text-danger small">{{ form.password2.errors.0 }}</div>
                             {% endif %}
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100 mb-3">
+                    <button type="submit" class="btn btn-primary w-100 mb-3 no-loading" id="registerBtn">
                         <i class="fas fa-user-plus me-2"></i>Create Account
                     </button>
                 </form>
@@ -98,4 +137,184 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const usernameInput = document.querySelector('input[name="username"]');
+    const usernameStatus = document.getElementById('usernameStatus');
+    const usernameHelp = document.getElementById('usernameHelp');
+    const usernameSuggestions = document.getElementById('usernameSuggestions');
+    const suggestionsList = document.getElementById('suggestionsList');
+    const registerForm = document.getElementById('registerForm');
+    const registerBtn = document.getElementById('registerBtn');
+    const registerLoader = document.getElementById('registerLoader');
+    
+    let usernameCheckTimeout;
+    let isUsernameValid = false;
+
+    // Password toggle functionality
+    function setupPasswordToggle(toggleId, inputName) {
+        const toggle = document.getElementById(toggleId);
+        const input = document.querySelector(`input[name="${inputName}"]`);
+        
+        if (toggle && input) {
+            toggle.addEventListener('click', function() {
+                const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+                input.setAttribute('type', type);
+                const icon = toggle.querySelector('i');
+                icon.classList.toggle('fa-eye');
+                icon.classList.toggle('fa-eye-slash');
+            });
+        }
+    }
+    
+    setupPasswordToggle('togglePassword1', 'password1');
+    setupPasswordToggle('togglePassword2', 'password2');
+
+    // Username availability checking
+    if (usernameInput) {
+        usernameInput.addEventListener('input', function() {
+            const username = this.value.trim();
+            
+            // Clear previous timeout
+            clearTimeout(usernameCheckTimeout);
+            
+            if (username.length < 3) {
+                resetUsernameStatus();
+                return;
+            }
+            
+            // Show checking status
+            usernameStatus.innerHTML = '<i class="fas fa-spinner fa-spin text-info"></i>';
+            usernameHelp.textContent = 'Checking availability...';
+            usernameHelp.className = 'form-text text-info';
+            
+            // Check username after 500ms delay
+            usernameCheckTimeout = setTimeout(() => {
+                checkUsernameAvailability(username);
+            }, 500);
+        });
+    }
+
+    function checkUsernameAvailability(username) {
+        // Simulate API call - replace with actual endpoint
+        fetch('/api/check-username/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({username: username})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.available) {
+                showUsernameAvailable();
+            } else {
+                showUsernameUnavailable(username, data.suggestions || []);
+            }
+        })
+        .catch(error => {
+            console.error('Username check error:', error);
+            // Fallback to client-side validation
+            validateUsernameClientSide(username);
+        });
+    }
+
+    function validateUsernameClientSide(username) {
+        // Simple client-side validation
+        const commonUsernames = ['admin', 'user', 'test', 'demo', 'guest'];
+        
+        if (commonUsernames.includes(username.toLowerCase())) {
+            showUsernameUnavailable(username, generateSuggestions(username));
+        } else {
+            showUsernameAvailable();
+        }
+    }
+
+    function showUsernameAvailable() {
+        usernameStatus.innerHTML = '<i class="fas fa-check text-success"></i>';
+        usernameHelp.textContent = 'Username is available!';
+        usernameHelp.className = 'form-text text-success';
+        usernameSuggestions.style.display = 'none';
+        isUsernameValid = true;
+    }
+
+    function showUsernameUnavailable(username, suggestions) {
+        usernameStatus.innerHTML = '<i class="fas fa-times text-danger"></i>';
+        usernameHelp.textContent = 'Username is already taken';
+        usernameHelp.className = 'form-text text-danger';
+        
+        if (suggestions.length === 0) {
+            suggestions = generateSuggestions(username);
+        }
+        
+        showSuggestions(suggestions);
+        isUsernameValid = false;
+    }
+
+    function generateSuggestions(username) {
+        const suggestions = [];
+        const random = Math.floor(Math.random() * 999) + 1;
+        
+        suggestions.push(username + random);
+        suggestions.push(username + '_' + random);
+        suggestions.push('user_' + username);
+        
+        return suggestions.slice(0, 3);
+    }
+
+    function showSuggestions(suggestions) {
+        suggestionsList.innerHTML = '';
+        suggestions.forEach(suggestion => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-outline-primary btn-sm me-2 mb-1';
+            btn.textContent = suggestion;
+            btn.onclick = () => {
+                usernameInput.value = suggestion;
+                usernameInput.dispatchEvent(new Event('input'));
+            };
+            suggestionsList.appendChild(btn);
+        });
+        usernameSuggestions.style.display = 'block';
+    }
+
+    function resetUsernameStatus() {
+        usernameStatus.innerHTML = '<i class="fas fa-user text-muted"></i>';
+        usernameHelp.textContent = 'Choose a unique username';
+        usernameHelp.className = 'form-text';
+        usernameSuggestions.style.display = 'none';
+        isUsernameValid = false;
+    }
+
+    // Form submission
+    if (registerForm) {
+        registerForm.addEventListener('submit', function(e) {
+            // Check if username is valid
+            if (!isUsernameValid && usernameInput.value.trim().length >= 3) {
+                e.preventDefault();
+                alert('Please choose an available username or wait for validation to complete.');
+                return;
+            }
+            
+            // Show loading
+            registerLoader.style.display = 'block';
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating Account...';
+            
+            // Set timeout to reset if something goes wrong
+            setTimeout(() => {
+                if (registerBtn.disabled) {
+                    registerLoader.style.display = 'none';
+                    registerBtn.disabled = false;
+                    registerBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i>Create Account';
+                }
+            }, 15000);
+        });
+    }
+});
+</script>
 {% endblock %}

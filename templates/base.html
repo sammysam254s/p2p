@@ -356,7 +356,7 @@
         
         // Global form submission handler
         document.addEventListener('DOMContentLoaded', function() {
-            // Add loading animation to all forms
+            // Add loading animation to forms (except those with no-loading class on submit button)
             const forms = document.querySelectorAll('form');
             forms.forEach(form => {
                 form.addEventListener('submit', function(e) {

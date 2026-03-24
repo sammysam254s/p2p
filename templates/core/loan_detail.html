@@ -192,12 +192,12 @@
                 
                 <div class="row text-center">
                     <div class="col-6">
-                        <h6>KES {{ loan.funded_amount|floatformat:2 }}</h6>
-                        <small class="text-muted">Funded</small>
+                        <h6>KES {{ loan.principal_amount|floatformat:2 }}</h6>
+                        <small class="text-muted">Total Amount</small>
                     </div>
                     <div class="col-6">
-                        <h6>KES {{ loan.principal_amount|sub:loan.funded_amount|floatformat:2 }}</h6>
-                        <small class="text-muted">Remaining</small>
+                        <h6>KES {{ loan.funded_amount|floatformat:2 }}</h6>
+                        <small class="text-muted">Funded Amount</small>
                     </div>
                 </div>
                 

@@ -685,3 +685,54 @@ def admin_wallet_management(request):
         'top_wallets': top_wallets,
     }
     return render(request, 'core/admin_wallet_management.html', context)
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+
+@csrf_exempt
+def check_username_api(request):
+    """API endpoint to check username availability"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username', '').strip()
+            
+            if len(username) < 3:
+                return JsonResponse({
+                    'available': False,
+                    'message': 'Username must be at least 3 characters long'
+                })
+            
+            # Check if username exists
+            user_exists = CustomUser.objects.filter(username=username).exists()
+            
+            if user_exists:
+                # Generate suggestions
+                suggestions = []
+                import random
+                random_num = random.randint(1, 999)
+                
+                suggestions.append(f"{username}{random_num}")
+                suggestions.append(f"{username}_{random_num}")
+                suggestions.append(f"user_{username}")
+                
+                return JsonResponse({
+                    'available': False,
+                    'message': 'Username is already taken',
+                    'suggestions': suggestions
+                })
+            else:
+                return JsonResponse({
+                    'available': True,
+                    'message': 'Username is available'
+                })
+                
+        except Exception as e:
+            logger.error(f"Username check API error: {str(e)}")
+            return JsonResponse({
+                'available': False,
+                'message': 'Error checking username availability'
+            })
+    
+    return JsonResponse({'error': 'Invalid request method'})
