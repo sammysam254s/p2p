@@ -11,7 +11,7 @@
 </div>
 
 <!-- KYC Status Alert -->
-{% if not kyc_verified %}
+{% if not kyc_verified and not is_admin %}
 <div class="row mb-4">
     <div class="col-12">
         {% if kyc_status == 'pending' %}
@@ -36,6 +36,18 @@
                 </a>
             </div>
         {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Admin Access Notice -->
+{% if is_admin %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <h5><i class="fas fa-crown me-2"></i>Admin Access</h5>
+            <p class="mb-0">You are viewing the borrower dashboard as an administrator. You have full access to all features.</p>
+        </div>
     </div>
 </div>
 {% endif %}

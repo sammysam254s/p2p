@@ -227,15 +227,22 @@ def borrower_dashboard(request):
             messages.error(request, 'Access denied. Borrowers only.')
             return redirect('home')
         
-        # Check KYC status for borrowers
+        # Check KYC status for borrowers (skip for admin)
         kyc_verified = False
         kyc_status = 'pending'
-        try:
-            kyc = request.user.kyc
-            kyc_verified = kyc.is_verified()
-            kyc_status = kyc.status
-        except KYCVerification.DoesNotExist:
-            pass
+        
+        if user_role == 'admin':
+            # Admin can access without KYC verification
+            kyc_verified = True
+            kyc_status = 'admin_access'
+        else:
+            # Check KYC for actual borrowers
+            try:
+                kyc = request.user.kyc
+                kyc_verified = kyc.is_verified()
+                kyc_status = kyc.status
+            except KYCVerification.DoesNotExist:
+                pass
         
         # Get borrower's loans from Django (for active loans with payments)
         django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
@@ -286,6 +293,14 @@ def borrower_dashboard(request):
             collateral_form = CollateralForm()
             loan_form = LoanApplicationForm()
         
+        # Get wallet balance safely
+        wallet_balance = 0.0
+        try:
+            wallet_balance = request.user.wallet_balance
+        except AttributeError:
+            # Admin might not have wallet_balance attribute
+            wallet_balance = 0.0
+        
         context = {
             'loans': django_loans,
             'total_borrowed': total_borrowed,
@@ -294,7 +309,8 @@ def borrower_dashboard(request):
             'loan_form': loan_form,
             'kyc_verified': kyc_verified,
             'kyc_status': kyc_status,
-            'wallet_balance': request.user.wallet_balance,
+            'wallet_balance': wallet_balance,
+            'is_admin': user_role == 'admin',  # Add admin flag for template
         }
         return render(request, 'core/borrower_dashboard.html', context)
         
@@ -379,6 +395,7 @@ def agent_panel(request):
         
         context = {
             'pending_collaterals': enriched_collaterals,
+            'is_admin': user_role == 'admin',  # Add admin flag for template
         }
         return render(request, 'core/agent_panel.html', context)
         
@@ -480,6 +497,7 @@ def marketplace(request):
             'listed_loans': valid_loans,
             'lender_investments': lender_investments,
             'total_invested': total_invested,
+            'is_admin': user_role == 'admin',  # Add admin flag for template
         }
         return render(request, 'core/marketplace.html', context)
         
