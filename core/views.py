@@ -1,18 +1,86 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.db.models import Sum
 from django.utils import timezone
 from decimal import Decimal
+import logging
 from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment
 from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm
 from .supabase_client import supabase
+
+logger = logging.getLogger(__name__)
+
+
+class CustomLoginView(LoginView):
+    """Custom login view with enhanced logging and error handling"""
+    template_name = 'registration/login.html'
+    
+    def form_valid(self, form):
+        username = form.cleaned_data.get('username')
+        logger.info(f"Login form valid for user: {username}")
+        
+        # Authenticate user
+        user = authenticate(
+            self.request,
+            username=username,
+            password=form.cleaned_data.get('password')
+        )
+        
+        if user is not None:
+            logger.info(f"User {username} authenticated successfully")
+            
+            # Check if user has a role
+            if not hasattr(user, 'role') or not user.role:
+                logger.error(f"User {username} has no role assigned")
+                messages.error(self.request, 'Your account is not properly configured. Please contact support.')
+                return self.form_invalid(form)
+            
+            # Log the user in
+            login(self.request, user)
+            logger.info(f"User {username} logged in with role: {user.role}")
+            
+            # Add success message
+            messages.success(self.request, f'Welcome back, {user.username}!')
+            
+            # Redirect based on role
+            if user.role == 'admin':
+                return redirect('admin_dashboard')
+            elif user.role == 'borrower':
+                return redirect('borrower_dashboard')
+            elif user.role == 'lender':
+                return redirect('marketplace')
+            elif user.role == 'agent':
+                return redirect('agent_panel')
+            else:
+                logger.warning(f"Unknown role for user {username}: {user.role}")
+                return redirect('home')
+        else:
+            logger.warning(f"Authentication failed for user: {username}")
+            messages.error(self.request, 'Invalid username or password.')
+            return self.form_invalid(form)
+    
+    def form_invalid(self, form):
+        logger.warning(f"Login form invalid: {form.errors}")
+        return super().form_invalid(form)
 
 
 def home(request):
     """Home page - redirect based on user role or show landing page"""
     if request.user.is_authenticated:
+        logger.info(f"Authenticated user {request.user.username} accessing home page")
+        
+        # Check if user has a role
+        if not hasattr(request.user, 'role') or not request.user.role:
+            logger.error(f"User {request.user.username} has no role assigned")
+            messages.error(request, 'Your account is not properly configured. Please contact support.')
+            return render(request, 'core/home.html')
+        
+        logger.info(f"User {request.user.username} has role: {request.user.role}")
+        
+        # Redirect based on role
         if request.user.role == 'borrower':
             return redirect('borrower_dashboard')
         elif request.user.role == 'lender':
@@ -21,6 +89,10 @@ def home(request):
             return redirect('agent_panel')
         elif request.user.role == 'admin':
             return redirect('admin_dashboard')
+        else:
+            logger.warning(f"Unknown role for user {request.user.username}: {request.user.role}")
+            messages.warning(request, f'Unknown user role: {request.user.role}. Please contact support.')
+    
     return render(request, 'core/home.html')
 
 
