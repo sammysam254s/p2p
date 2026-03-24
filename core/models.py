@@ -3,6 +3,54 @@ from django.db import models
 from decimal import Decimal
 from django.utils import timezone
 from datetime import timedelta
+import uuid
+
+
+class KYCVerification(models.Model):
+    """KYC verification model for user identity verification"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('under_review', 'Under Review'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    user = models.OneToOneField('CustomUser', on_delete=models.CASCADE, related_name='kyc')
+    
+    # Personal Information
+    full_name = models.CharField(max_length=200)
+    id_number = models.CharField(max_length=20)
+    date_of_birth = models.DateField()
+    
+    # Document Images
+    id_front_image = models.ImageField(upload_to='kyc/id_front/', null=True, blank=True)
+    id_back_image = models.ImageField(upload_to='kyc/id_back/', null=True, blank=True)
+    selfie_image = models.ImageField(upload_to='kyc/selfies/', null=True, blank=True)
+    signature_image = models.ImageField(upload_to='kyc/signatures/', null=True, blank=True)
+    
+    # Verification Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    verification_score = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    ai_verification_result = models.JSONField(default=dict, blank=True)
+    
+    # Verification Details
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey('CustomUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_kycs')
+    rejection_reason = models.TextField(blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"KYC for {self.user.username} - {self.status}"
+    
+    def is_verified(self):
+        return self.status == 'verified'
+    
+    def can_borrow(self):
+        """Check if user can borrow based on KYC status"""
+        return self.status == 'verified'
 
 
 class CustomUser(AbstractUser):
@@ -26,6 +74,17 @@ class CustomUser(AbstractUser):
     
     def get_wallet_balance(self):
         return self.wallet_balance
+    
+    def has_verified_kyc(self):
+        """Check if user has verified KYC"""
+        try:
+            return self.kyc.is_verified()
+        except KYCVerification.DoesNotExist:
+            return False
+    
+    def can_borrow(self):
+        """Check if user can create loan applications"""
+        return self.role == 'borrower' and self.has_verified_kyc()
     
     def add_to_wallet(self, amount, description=""):
         """Add money to user's wallet"""
@@ -90,17 +149,23 @@ class Collateral(models.Model):
     item_type = models.CharField(max_length=100, help_text="e.g., Smartphone, Laptop, Jewelry")
     brand_model = models.CharField(max_length=200, help_text="e.g., iPhone 14 Pro, MacBook Air M2")
     market_value = models.DecimalField(max_digits=10, decimal_places=2)
+    agent_verified_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Value verified by agent")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     verification_date = models.DateTimeField(null=True, blank=True)
     verified_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_collaterals')
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return f"{self.brand_model} - KES {self.market_value}"
+        return f"{self.brand_model} - KES {self.get_current_value()}"
+    
+    def get_current_value(self):
+        """Get the current market value (agent verified or original)"""
+        return self.agent_verified_value if self.agent_verified_value else self.market_value
     
     def calculate_max_loan_amount(self):
         """Implements the 30/50 rule: 30% devaluation, then 50% of devalued amount"""
-        devalued_amount = self.market_value * Decimal('0.70')
+        current_value = self.get_current_value()
+        devalued_amount = current_value * Decimal('0.70')
         max_loan_amount = devalued_amount * Decimal('0.50')
         return max_loan_amount
 
@@ -126,6 +191,7 @@ class Loan(models.Model):
     activated_at = models.DateTimeField(null=True, blank=True)
     next_payment_date = models.DateTimeField(null=True, blank=True)
     payments_made = models.IntegerField(default=0)
+    contract_pdf = models.FileField(upload_to='contracts/', null=True, blank=True)
     
     def __str__(self):
         return f"Loan #{self.id} - KES {self.principal_amount}"

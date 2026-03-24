@@ -1,6 +1,85 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
-from .models import CustomUser, Collateral, Loan, Investment
+from .models import CustomUser, Collateral, Loan, Investment, KYCVerification
+
+
+class KYCVerificationForm(forms.ModelForm):
+    """Form for KYC verification submission"""
+    
+    class Meta:
+        model = KYCVerification
+        fields = ['full_name', 'id_number', 'date_of_birth', 'id_front_image', 
+                 'id_back_image', 'selfie_image', 'signature_image']
+        widgets = {
+            'full_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter your full name as on ID'
+            }),
+            'id_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter your national ID number'
+            }),
+            'date_of_birth': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'id_front_image': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            }),
+            'id_back_image': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            }),
+            'selfie_image': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            }),
+            'signature_image': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*'
+            }),
+        }
+        labels = {
+            'full_name': 'Full Name (as on ID)',
+            'id_number': 'National ID Number',
+            'date_of_birth': 'Date of Birth',
+            'id_front_image': 'ID Front Image',
+            'id_back_image': 'ID Back Image',
+            'selfie_image': 'Selfie Photo',
+            'signature_image': 'Signature Image',
+        }
+    
+    def clean_id_number(self):
+        id_number = self.cleaned_data.get('id_number')
+        if len(id_number) < 7 or len(id_number) > 8:
+            raise forms.ValidationError('ID number must be 7-8 digits long')
+        return id_number
+
+
+class CollateralVerificationForm(forms.ModelForm):
+    """Form for agents to verify and update collateral market value"""
+    
+    class Meta:
+        model = Collateral
+        fields = ['agent_verified_value']
+        widgets = {
+            'agent_verified_value': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1000',
+                'step': '0.01',
+                'placeholder': 'Enter verified market value'
+            }),
+        }
+        labels = {
+            'agent_verified_value': 'Verified Market Value (KES)',
+        }
+    
+    def clean_agent_verified_value(self):
+        value = self.cleaned_data.get('agent_verified_value')
+        if value < 1000:
+            raise forms.ValidationError('Verified value must be at least KES 1,000')
+        return value
 
 
 class CustomUserCreationForm(UserCreationForm):
