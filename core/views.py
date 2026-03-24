@@ -1446,3 +1446,92 @@ def check_username_api(request):
             })
     
     return JsonResponse({'error': 'Invalid request method'})
+
+
+@login_required
+def borrower_loans(request):
+    """Borrower's loans page"""
+    try:
+        # Check if user is borrower or admin
+        user_role = getattr(request.user, 'role', 'borrower')
+        if user_role not in ['borrower', 'admin']:
+            messages.error(request, 'Access denied. This page is for borrowers.')
+            return redirect('home')
+        
+        # Get borrower's loans
+        loans = Loan.objects.filter(borrower=request.user).select_related('collateral').order_by('-created_at')
+        
+        context = {
+            'loans': loans,
+            'is_admin': user_role == 'admin',
+            'user_role': user_role,
+        }
+        return render(request, 'core/borrower_loans.html', context)
+        
+    except Exception as e:
+        logger.error(f"Borrower loans error: {str(e)}")
+        messages.error(request, 'Error loading loans.')
+        return redirect('borrower_dashboard')
+
+
+@login_required
+def borrower_collaterals(request):
+    """Borrower's collaterals page"""
+    try:
+        # Check if user is borrower or admin
+        user_role = getattr(request.user, 'role', 'borrower')
+        if user_role not in ['borrower', 'admin']:
+            messages.error(request, 'Access denied. This page is for borrowers.')
+            return redirect('home')
+        
+        # Get borrower's collaterals
+        collaterals = Collateral.objects.filter(user=request.user).order_by('-created_at')
+        
+        context = {
+            'collaterals': collaterals,
+            'is_admin': user_role == 'admin',
+            'user_role': user_role,
+        }
+        return render(request, 'core/borrower_collaterals.html', context)
+        
+    except Exception as e:
+        logger.error(f"Borrower collaterals error: {str(e)}")
+        messages.error(request, 'Error loading collaterals.')
+        return redirect('borrower_dashboard')
+
+
+@login_required
+def borrower_documents(request):
+    """Borrower's documents and PDFs page"""
+    try:
+        # Check if user is borrower or admin
+        user_role = getattr(request.user, 'role', 'borrower')
+        if user_role not in ['borrower', 'admin']:
+            messages.error(request, 'Access denied. This page is for borrowers.')
+            return redirect('home')
+        
+        # Get borrower's loans with contracts
+        loans_with_contracts = Loan.objects.filter(
+            borrower=request.user,
+            contract_pdf__isnull=False
+        ).exclude(contract_pdf='').select_related('collateral').order_by('-created_at')
+        
+        # Get KYC documents
+        kyc_documents = None
+        try:
+            kyc_documents = request.user.kyc
+        except KYCVerification.DoesNotExist:
+            pass
+        
+        context = {
+            'loans_with_contracts': loans_with_contracts,
+            'kyc_documents': kyc_documents,
+            'is_admin': user_role == 'admin',
+            'user_role': user_role,
+        }
+        return render(request, 'core/borrower_documents.html', context)
+        
+    except Exception as e:
+        logger.error(f"Borrower documents error: {str(e)}")
+        messages.error(request, 'Error loading documents.')
+        return redirect('borrower_dashboard')

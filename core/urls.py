@@ -4,7 +4,11 @@ from . import views
 urlpatterns = [
     path('', views.home, name='home'),
     path('register/', views.register, name='register'),
+    # Borrower-specific URLs
     path('borrower/', views.borrower_dashboard, name='borrower_dashboard'),
+    path('borrower/loans/', views.borrower_loans, name='borrower_loans'),
+    path('borrower/collaterals/', views.borrower_collaterals, name='borrower_collaterals'),
+    path('borrower/documents/', views.borrower_documents, name='borrower_documents'),
     path('agent/', views.agent_panel, name='agent_panel'),
     path('marketplace/', views.marketplace, name='marketplace'),
     path('loan/<int:loan_id>/', views.loan_detail, name='loan_detail'),

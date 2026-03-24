@@ -3,6 +3,84 @@
 {% block title %}Borrower Dashboard - P2P Secure-Lend{% endblock %}
 
 {% block content %}
+<!-- Mobile Hamburger Menu for Borrowers -->
+<div class="d-lg-none mb-3">
+    <button class="btn btn-primary w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#borrowerMobileMenu" aria-controls="borrowerMobileMenu">
+        <i class="fas fa-bars me-2"></i>Borrower Menu
+    </button>
+</div>
+
+<!-- Mobile Offcanvas Menu -->
+<div class="offcanvas offcanvas-start" tabindex="-1" id="borrowerMobileMenu" aria-labelledby="borrowerMobileMenuLabel">
+    <div class="offcanvas-header bg-primary text-white">
+        <h5 class="offcanvas-title" id="borrowerMobileMenuLabel">
+            <i class="fas fa-user me-2"></i>{{ user.username }}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body p-0">
+        <div class="list-group list-group-flush">
+            <!-- Dashboard -->
+            <a href="{% url 'borrower_dashboard' %}" class="list-group-item list-group-item-action {% if request.resolver_match.url_name == 'borrower_dashboard' %}active{% endif %}">
+                <i class="fas fa-tachometer-alt me-3 text-primary"></i>
+                <span>Dashboard</span>
+            </a>
+            
+            <!-- KYC Verification -->
+            <a href="{% url 'kyc_verification' %}" class="list-group-item list-group-item-action">
+                <i class="fas fa-id-card me-3 text-warning"></i>
+                <span>KYC Verification</span>
+                {% if not kyc_verified and not is_admin %}
+                    <span class="badge bg-warning text-dark ms-2">Required</span>
+                {% elif kyc_verified %}
+                    <span class="badge bg-success ms-2">Verified</span>
+                {% endif %}
+            </a>
+            
+            <!-- My Loans -->
+            <a href="{% url 'borrower_loans' %}" class="list-group-item list-group-item-action {% if request.resolver_match.url_name == 'borrower_loans' %}active{% endif %}">
+                <i class="fas fa-money-bill-wave me-3 text-info"></i>
+                <span>My Loans</span>
+                {% if loans %}
+                    <span class="badge bg-info ms-2">{{ loans|length }}</span>
+                {% endif %}
+            </a>
+            
+            <!-- My Collaterals -->
+            <a href="{% url 'borrower_collaterals' %}" class="list-group-item list-group-item-action {% if request.resolver_match.url_name == 'borrower_collaterals' %}active{% endif %}">
+                <i class="fas fa-gem me-3 text-success"></i>
+                <span>My Collaterals</span>
+            </a>
+            
+            <!-- Documents & PDFs -->
+            <a href="{% url 'borrower_documents' %}" class="list-group-item list-group-item-action {% if request.resolver_match.url_name == 'borrower_documents' %}active{% endif %}">
+                <i class="fas fa-file-pdf me-3 text-danger"></i>
+                <span>Documents & PDFs</span>
+            </a>
+            
+            <!-- Divider -->
+            <div class="list-group-item bg-light">
+                <small class="text-muted">Quick Actions</small>
+            </div>
+            
+            <!-- Apply for Loan -->
+            {% if kyc_verified %}
+            <button class="list-group-item list-group-item-action text-primary" data-bs-toggle="modal" data-bs-target="#loanApplicationModal">
+                <i class="fas fa-plus me-3"></i>
+                <span>Apply for Loan</span>
+            </button>
+            {% endif %}
+            
+            <!-- Wallet -->
+            <div class="list-group-item">
+                <i class="fas fa-wallet me-3 text-success"></i>
+                <span>Wallet Balance</span>
+                <div class="fw-bold text-success">KES {{ wallet_balance|floatformat:2 }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <h2><i class="fas fa-hand-holding-usd me-2 text-primary"></i>Borrower Dashboard</h2>
