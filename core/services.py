@@ -115,6 +115,10 @@ class SupabaseService:
         """Get collateral by ID"""
         return self.collateral_service.get_collateral_by_id(collateral_id)
     
+    def get_all_collaterals(self):
+        """Get all collaterals"""
+        return self.collateral_service.get_all_collaterals()
+    
     # Loan operations
     def create_loan(self, borrower_id, collateral_id, principal_amount, interest_rate=13.00, duration_months=3):
         """Create loan"""

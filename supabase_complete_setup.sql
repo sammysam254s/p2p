@@ -244,7 +244,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create admin user
+-- Create admin user (commented out to allow registration)
+-- Uncomment and run separately if needed
+/*
 INSERT INTO public.users (
     username, 
     email, 
@@ -282,6 +284,7 @@ INSERT INTO public.users (
     is_superuser = true,
     is_promoted_admin = true,
     updated_at = NOW();
+*/
 
 -- Verify setup
 SELECT 'Setup completed successfully!' as status;

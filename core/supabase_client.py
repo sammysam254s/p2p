@@ -201,6 +201,10 @@ class SupabaseCollateralService:
         """Get collateral by ID"""
         result = self.client.select('collateral', filters={'id': collateral_id})
         return result[0] if result else None
+    
+    def get_all_collaterals(self):
+        """Get all collaterals"""
+        return self.client.select('collateral', order='created_at.desc')
 
 
 class SupabaseLoanService:
