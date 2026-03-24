@@ -84,7 +84,8 @@ def test_requirements():
             'dj-database-url',
             'Pillow',
             'reportlab',
-            'supabase'
+            'supabase',
+            'pytesseract'
         ]
         
         missing_packages = []
@@ -94,8 +95,8 @@ def test_requirements():
             else:
                 print(f"✓ {package} found in requirements")
         
-        # Check for problematic packages
-        problematic_packages = ['opencv-python', 'face-recognition', 'dlib', 'pytesseract']
+        # Check for problematic packages (heavy AI packages that cause build issues)
+        problematic_packages = ['opencv-python', 'face-recognition', 'dlib']
         found_problematic = []
         for package in problematic_packages:
             if package in requirements:
@@ -127,11 +128,14 @@ if __name__ == "__main__":
         print("\n🎉 All tests passed! Ready for deployment.")
         print("\n📋 Deployment Summary:")
         print("- Heavy AI packages removed (opencv-python, face-recognition, dlib)")
-        print("- KYC service simplified for deployment")
+        print("- KYC service uses strict OCR text verification with pytesseract")
+        print("- Name and ID number must match extracted text or KYC fails")
+        print("- Build script installs tesseract-ocr system dependency")
         print("- All core functionality preserved")
         print("- PDF generation working")
         print("- Supabase integration intact")
         print("\n🚀 You can now deploy to Render!")
+        print("⚠️  Note: First deployment may take longer due to tesseract installation")
         exit(0)
     else:
         print("\n💥 Some tests failed. Check the errors above.")

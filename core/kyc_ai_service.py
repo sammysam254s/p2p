@@ -1,4 +1,5 @@
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageEnhance, ImageFilter
+import pytesseract
 import re
 from datetime import datetime, date
 import logging
@@ -10,20 +11,23 @@ logger = logging.getLogger(__name__)
 
 class KYCAIVerificationService:
     """
-    AI-powered KYC verification service
+    Strict KYC verification service with OCR text extraction and validation
     
-    DEPLOYMENT NOTE: This service has been simplified for deployment compatibility.
-    Heavy AI packages (opencv-python, face-recognition, dlib, pytesseract) have been
-    removed to prevent build timeouts on cloud platforms.
+    VERIFICATION REQUIREMENTS:
+    - OCR text extraction must succeed
+    - Name on ID must match provided name (80% word match required)
+    - ID number on document must match provided ID number (exact or 80% digit match)
+    - Date of birth verification is recommended but not required for approval
+    - Face matching provides additional confidence scoring
+    - Document quality affects overall scoring
     
-    For production-grade AI verification, consider integrating with:
-    - AWS Rekognition (face comparison, document analysis)
-    - Google Cloud Vision API (OCR, face detection)  
-    - Azure Computer Vision (document processing, face verification)
-    - Custom cloud AI deployment with more memory resources
+    STRICT POLICY: If name or ID number don't match extracted text, KYC fails regardless of other scores.
     
-    Current implementation provides basic validation and moderate confidence scores
-    to maintain functionality while being deployment-friendly.
+    DEPLOYMENT NOTE: Uses pytesseract for OCR which requires tesseract-ocr system package.
+    For cloud deployment, ensure tesseract is available or use cloud OCR services like:
+    - AWS Textract
+    - Google Cloud Vision API  
+    - Azure Computer Vision
     """
     
     def __init__(self):
@@ -122,34 +126,63 @@ class KYCAIVerificationService:
             return 0.0
     
     def _extract_and_verify_id_text(self, id_image, provided_name, provided_id, provided_dob):
-        """Simplified text verification - basic validation without OCR"""
+        """Extract text from ID using OCR and strictly verify against provided information"""
         result = {
-            'name_match': True,  # Assume valid for now
-            'id_match': True,    # Assume valid for now
-            'dob_match': True,   # Assume valid for now
-            'extracted_text': 'Text extraction temporarily disabled - manual review required',
-            'confidence': 75.0   # Moderate confidence
+            'name_match': False,
+            'id_match': False,
+            'dob_match': False,
+            'extracted_text': '',
+            'confidence': 0.0,
+            'extraction_successful': False
         }
         
         try:
-            # Basic validation of provided data
-            if not provided_name or len(provided_name.strip()) < 2:
-                result['name_match'] = False
-                result['confidence'] -= 25
+            # Load and preprocess image for better OCR
+            image = Image.open(id_image.path)
             
-            if not provided_id or len(provided_id.strip()) < 6:
-                result['id_match'] = False
-                result['confidence'] -= 25
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             
-            # Validate image exists and is reasonable size
-            if not self._validate_image(id_image.path):
-                result['confidence'] -= 25
+            # Enhance image for better OCR results
+            image = self._enhance_image_for_ocr(image)
             
-            # In production, integrate with cloud OCR service like:
-            # - Google Cloud Vision API
-            # - AWS Textract
-            # - Azure Computer Vision
-            # This would provide proper text extraction and verification
+            # Extract text using OCR with optimized settings
+            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz /.-'
+            
+            try:
+                extracted_text = pytesseract.image_to_string(image, config=custom_config)
+                result['extracted_text'] = extracted_text
+                result['extraction_successful'] = True
+                logger.info(f"OCR extracted text: {extracted_text[:100]}...")  # Log first 100 chars
+                
+            except Exception as ocr_error:
+                logger.error(f"OCR extraction failed: {str(ocr_error)}")
+                result['extracted_text'] = f"OCR failed: {str(ocr_error)}"
+                result['confidence'] = 0.0
+                return result
+            
+            # Clean and normalize extracted text
+            cleaned_text = self._clean_extracted_text(extracted_text)
+            
+            # Strict verification of each field
+            result['name_match'] = self._verify_name_strict(cleaned_text, provided_name)
+            result['id_match'] = self._verify_id_number_strict(cleaned_text, provided_id)
+            result['dob_match'] = self._verify_dob_strict(cleaned_text, provided_dob)
+            
+            # Calculate confidence - ALL fields must match for high confidence
+            matches = sum([result['name_match'], result['id_match'], result['dob_match']])
+            
+            if matches == 3:
+                result['confidence'] = 95.0  # High confidence when all match
+            elif matches == 2:
+                result['confidence'] = 60.0  # Medium confidence
+            elif matches == 1:
+                result['confidence'] = 30.0  # Low confidence
+            else:
+                result['confidence'] = 0.0   # No confidence when nothing matches
+            
+            logger.info(f"KYC verification results - Name: {result['name_match']}, ID: {result['id_match']}, DOB: {result['dob_match']}, Confidence: {result['confidence']}%")
             
         except Exception as e:
             logger.error(f"ID text extraction error: {str(e)}")
@@ -157,6 +190,162 @@ class KYCAIVerificationService:
             result['confidence'] = 0.0
         
         return result
+    
+    def _enhance_image_for_ocr(self, image):
+        """Enhance image quality for better OCR results"""
+        try:
+            # Resize if too small (OCR works better on larger images)
+            width, height = image.size
+            if width < 800 or height < 600:
+                scale_factor = max(800/width, 600/height)
+                new_width = int(width * scale_factor)
+                new_height = int(height * scale_factor)
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to grayscale for better OCR
+            image = image.convert('L')
+            
+            # Enhance contrast
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.0)
+            
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(2.0)
+            
+            # Apply slight blur to reduce noise
+            image = image.filter(ImageFilter.MedianFilter(size=3))
+            
+            return image
+            
+        except Exception as e:
+            logger.error(f"Image enhancement error: {str(e)}")
+            return image  # Return original if enhancement fails
+    
+    def _clean_extracted_text(self, text):
+        """Clean and normalize extracted text"""
+        # Remove extra whitespace and normalize
+        cleaned = re.sub(r'\s+', ' ', text.strip())
+        # Remove special characters but keep basic punctuation
+        cleaned = re.sub(r'[^\w\s\-/.]', ' ', cleaned)
+        return cleaned.upper()
+    
+    def _verify_name_strict(self, extracted_text, provided_name):
+        """Strictly verify name matches extracted text"""
+        if not provided_name or len(provided_name.strip()) < 2:
+            return False
+        
+        # Normalize provided name
+        provided_name_clean = re.sub(r'[^\w\s]', ' ', provided_name.upper().strip())
+        name_words = [word for word in provided_name_clean.split() if len(word) > 1]
+        
+        if not name_words:
+            return False
+        
+        # Check if ALL significant name words are found in extracted text
+        matches = 0
+        for word in name_words:
+            if len(word) > 2:  # Only check words longer than 2 characters
+                if word in extracted_text:
+                    matches += 1
+                else:
+                    # Try fuzzy matching for common OCR errors
+                    if self._fuzzy_word_match(word, extracted_text):
+                        matches += 1
+        
+        # Require at least 80% of name words to match
+        required_matches = max(1, int(len(name_words) * 0.8))
+        return matches >= required_matches
+    
+    def _verify_id_number_strict(self, extracted_text, provided_id):
+        """Strictly verify ID number matches extracted text"""
+        if not provided_id or len(provided_id.strip()) < 6:
+            return False
+        
+        # Extract only digits from provided ID
+        provided_digits = re.sub(r'\D', '', provided_id)
+        
+        if len(provided_digits) < 6:
+            return False
+        
+        # Find all number sequences in extracted text
+        extracted_numbers = re.findall(r'\d{6,}', extracted_text)
+        
+        # Check if provided ID digits match any extracted number
+        for extracted_num in extracted_numbers:
+            if provided_digits in extracted_num or extracted_num in provided_digits:
+                return True
+            
+            # Check for partial match (at least 80% of digits match)
+            if len(provided_digits) >= 8:
+                match_threshold = int(len(provided_digits) * 0.8)
+                matches = sum(1 for i, digit in enumerate(provided_digits) 
+                            if i < len(extracted_num) and digit == extracted_num[i])
+                if matches >= match_threshold:
+                    return True
+        
+        return False
+    
+    def _verify_dob_strict(self, extracted_text, provided_dob):
+        """Strictly verify date of birth matches extracted text"""
+        if not provided_dob:
+            return True  # If no DOB provided, don't fail verification
+        
+        # Generate multiple date format patterns
+        dob_patterns = [
+            provided_dob.strftime('%d/%m/%Y'),
+            provided_dob.strftime('%d-%m-%Y'),
+            provided_dob.strftime('%d.%m.%Y'),
+            provided_dob.strftime('%d %m %Y'),
+            provided_dob.strftime('%Y-%m-%d'),
+            provided_dob.strftime('%Y/%m/%d'),
+            provided_dob.strftime('%m/%d/%Y'),
+            provided_dob.strftime('%d/%m/%y'),
+            provided_dob.strftime('%d-%m-%y'),
+            provided_dob.strftime('%d.%m.%y'),
+        ]
+        
+        # Check if any date pattern is found in extracted text
+        for pattern in dob_patterns:
+            if pattern in extracted_text:
+                return True
+        
+        # Check for individual date components
+        day = provided_dob.strftime('%d').lstrip('0')
+        month = provided_dob.strftime('%m').lstrip('0')
+        year = provided_dob.strftime('%Y')
+        year_short = provided_dob.strftime('%y')
+        
+        # Look for date components in extracted text
+        day_found = day in extracted_text
+        month_found = month in extracted_text
+        year_found = year in extracted_text or year_short in extracted_text
+        
+        # Require at least 2 out of 3 date components to match
+        components_found = sum([day_found, month_found, year_found])
+        return components_found >= 2
+    
+    def _fuzzy_word_match(self, word, text):
+        """Check for fuzzy word matching to handle common OCR errors"""
+        # Common OCR character substitutions
+        ocr_substitutions = {
+            '0': 'O', '1': 'I', '5': 'S', '8': 'B', '6': 'G',
+            'O': '0', 'I': '1', 'S': '5', 'B': '8', 'G': '6'
+        }
+        
+        # Generate variations of the word with common OCR errors
+        variations = [word]
+        for i, char in enumerate(word):
+            if char in ocr_substitutions:
+                variation = word[:i] + ocr_substitutions[char] + word[i+1:]
+                variations.append(variation)
+        
+        # Check if any variation is found in text
+        for variation in variations:
+            if variation in text:
+                return True
+        
+        return False
     
     def _check_document_quality(self, id_front, id_back, selfie):
         """Check quality of submitted documents"""
@@ -212,11 +401,26 @@ class KYCAIVerificationService:
             return 0.0
     
     def _calculate_overall_score(self, face_score, id_text_result, quality_result):
-        """Calculate overall verification score"""
-        # Weighted scoring
-        face_weight = 0.4  # 40% weight for face matching
-        text_weight = 0.4  # 40% weight for text verification
-        quality_weight = 0.2  # 20% weight for document quality
+        """Calculate overall verification score with strict text verification requirement"""
+        
+        # STRICT REQUIREMENT: Text verification must pass for KYC to be approved
+        if not id_text_result.get('extraction_successful', False):
+            logger.warning("KYC failed: OCR extraction unsuccessful")
+            return 0.0
+        
+        # Check if critical text fields match
+        name_match = id_text_result.get('name_match', False)
+        id_match = id_text_result.get('id_match', False)
+        
+        # STRICT REQUIREMENT: Both name and ID must match
+        if not name_match or not id_match:
+            logger.warning(f"KYC failed: Name match: {name_match}, ID match: {id_match}")
+            return 0.0
+        
+        # If text verification passes, calculate weighted score
+        face_weight = 0.3   # 30% weight for face matching
+        text_weight = 0.5   # 50% weight for text verification (increased importance)
+        quality_weight = 0.2 # 20% weight for document quality
         
         overall_score = (
             face_score * face_weight +
@@ -224,44 +428,59 @@ class KYCAIVerificationService:
             quality_result['overall_quality'] * quality_weight
         )
         
+        # Ensure minimum score requirements are met
+        if overall_score < 70.0:
+            logger.warning(f"KYC failed: Overall score {overall_score:.1f}% below 70% threshold")
+            return 0.0
+        
         return min(overall_score, 100)
     
     def _generate_recommendations(self, face_score, id_text_result, quality_result):
         """Generate recommendations based on verification results"""
         recommendations = []
         
+        # Check if OCR extraction failed
+        if not id_text_result.get('extraction_successful', False):
+            recommendations.append("❌ CRITICAL: Could not extract text from ID. Ensure ID image is clear, well-lit, and high quality.")
+            recommendations.append("📸 Retake ID photo with better lighting and ensure all text is clearly visible.")
+            return recommendations
+        
+        # Text verification recommendations (STRICT)
+        if not id_text_result.get('name_match', False):
+            recommendations.append("❌ CRITICAL: Name on ID does not match provided name. Verification failed.")
+            recommendations.append("📝 Ensure the name you entered exactly matches the name on your ID.")
+        
+        if not id_text_result.get('id_match', False):
+            recommendations.append("❌ CRITICAL: ID number on document does not match provided ID number. Verification failed.")
+            recommendations.append("🔢 Double-check that the ID number you entered matches exactly what's on your ID.")
+        
+        if not id_text_result.get('dob_match', False):
+            recommendations.append("⚠️ Date of birth could not be verified from ID. Please ensure DOB is clearly visible.")
+        
         # Face matching recommendations
         if face_score < 40:
-            recommendations.append("Face match score is low. Consider retaking selfie with better lighting.")
+            recommendations.append("📷 Face match score is low. Retake selfie with better lighting and clear facial visibility.")
         elif face_score < 60:
-            recommendations.append("Face match is acceptable but could be improved. Ensure clear facial visibility.")
-        
-        # Text verification recommendations
-        if not id_text_result['name_match']:
-            recommendations.append("Name verification failed. Ensure ID is clear and name matches exactly.")
-        
-        if not id_text_result['id_match']:
-            recommendations.append("ID number verification failed. Check ID clarity and number accuracy.")
-        
-        if not id_text_result['dob_match']:
-            recommendations.append("Date of birth verification failed. Ensure DOB is clearly visible on ID.")
+            recommendations.append("📷 Face match could be improved. Ensure clear facial visibility in both selfie and ID photo.")
         
         # Quality recommendations
         if quality_result['overall_quality'] < 50:
-            recommendations.append("Document quality is poor. Retake photos with better lighting and focus.")
+            recommendations.append("📸 Document quality is poor. Retake all photos with better lighting, focus, and higher resolution.")
         
         if quality_result['id_front_quality'] < 60:
-            recommendations.append("ID front image quality needs improvement.")
+            recommendations.append("📄 ID front image quality needs improvement. Ensure good lighting and focus.")
         
         if quality_result['id_back_quality'] < 60:
-            recommendations.append("ID back image quality needs improvement.")
+            recommendations.append("📄 ID back image quality needs improvement. Ensure good lighting and focus.")
         
         if quality_result['selfie_quality'] < 60:
-            recommendations.append("Selfie quality needs improvement.")
+            recommendations.append("🤳 Selfie quality needs improvement. Use good lighting and ensure face is clearly visible.")
         
         # Success message
         if not recommendations:
-            recommendations.append("All verification checks passed successfully.")
+            recommendations.append("✅ All verification checks passed successfully! KYC approved.")
+        else:
+            recommendations.append("🚫 KYC verification failed. Please address the issues above and resubmit.")
         
         return recommendations
     
