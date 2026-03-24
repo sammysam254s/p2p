@@ -495,57 +495,6 @@ def marketplace(request):
             'is_admin': user_role == 'admin',  # Add admin flag for template
         }
         return render(request, 'core/marketplace.html', context)
-                    messages.error(request, 'Minimum investment amount is KES 100.')
-                else:
-                    # Check if lender already invested in this loan
-                    existing_investment = Investment.objects.filter(loan=loan, lender=request.user).first()
-                    
-                    if existing_investment:
-                        messages.info(request, 'You have already invested in this loan.')
-                    else:
-                        # Create new investment
-                        Investment.objects.create(
-                            lender=request.user,
-                            loan=loan,
-                            amount_invested=investment_amount
-                        )
-                        
-                        # Update loan funded amount
-                        loan.funded_amount += investment_amount
-                        
-                        # Check if loan is fully funded
-                        if loan.funded_amount >= loan.principal_amount:
-                            loan.status = 'active'
-                            loan.activate_loan()
-                            
-                            # Generate updated contract PDF
-                            pdf_generator.save_contract_pdf(loan)
-                            
-                            messages.success(request, f'Loan fully funded! KES {investment_amount:,.2f} invested successfully.')
-                        else:
-                            messages.success(request, f'KES {investment_amount:,.2f} invested successfully.')
-                        
-                        loan.save()
-                
-                return redirect('marketplace')
-                
-            except Loan.DoesNotExist:
-                messages.error(request, 'Loan not found or not available for investment.')
-            except Exception as e:
-                logger.error(f"Investment error: {str(e)}")
-                messages.error(request, 'Error processing investment. Please try again.')
-        
-        # Get lender's investments
-        lender_investments = Investment.objects.filter(lender=request.user).select_related('loan')
-        total_invested = sum(inv.amount_invested for inv in lender_investments)
-        
-        context = {
-            'listed_loans': valid_loans,
-            'lender_investments': lender_investments,
-            'total_invested': total_invested,
-            'is_admin': user_role == 'admin',  # Add admin flag for template
-        }
-        return render(request, 'core/marketplace.html', context)
         
     except Exception as e:
         logger.error(f"Marketplace error: {str(e)}")
