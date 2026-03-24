@@ -86,6 +86,10 @@ class SupabaseService:
         """Update user"""
         return self.user_service.update_user(user_id, data)
     
+    def get_user_by_national_id(self, national_id):
+        """Get user by national ID"""
+        return self.user_service.get_user_by_national_id(national_id)
+    
     def get_all_users(self):
         """Get all users"""
         return self.user_service.get_all_users()

@@ -20,7 +20,7 @@ from django.contrib.auth import views as auth_views
 from core.views import CustomLoginView, CustomLogoutView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('admin/django/', admin.site.urls),  # Move Django admin to /admin/django/
     path('', include('core.urls')),
     path('login/', CustomLoginView.as_view(), name='login'),
     path('logout/', CustomLogoutView.as_view(), name='logout'),

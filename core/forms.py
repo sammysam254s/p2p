@@ -4,7 +4,15 @@ from .models import CustomUser, Collateral, Loan, Investment
 
 
 class CustomUserCreationForm(UserCreationForm):
+    # Define role choices without admin option for security
+    ROLE_CHOICES = [
+        ('borrower', 'Borrower'),
+        ('lender', 'Lender'),
+        ('agent', 'Station Agent'),
+    ]
+    
     email = forms.EmailField(required=True)
+    role = forms.ChoiceField(choices=ROLE_CHOICES, required=True)
     phone_number = forms.CharField(max_length=15, help_text="M-Pesa phone number (e.g., 254712345678)")
     national_id = forms.CharField(max_length=20, help_text="National ID number")
     
@@ -23,6 +31,39 @@ class CustomUserCreationForm(UserCreationForm):
         self.fields['email'].widget.attrs['placeholder'] = 'Enter email address'
         self.fields['phone_number'].widget.attrs['placeholder'] = '254712345678'
         self.fields['national_id'].widget.attrs['placeholder'] = 'Enter National ID'
+        
+    def clean_email(self):
+        """Custom validation for email"""
+        email = self.cleaned_data.get('email')
+        
+        # Security: Prevent registration with admin email
+        if email == 'sammyseth260@gmail.com':
+            raise forms.ValidationError('This email is reserved for system administration.')
+        
+        return email
+    
+    def clean_national_id(self):
+        """Custom validation for national ID"""
+        from .services import supabase_service
+        
+        national_id = self.cleaned_data.get('national_id')
+        
+        # Check if national ID already exists in Supabase
+        existing_user = supabase_service.get_user_by_national_id(national_id)
+        if existing_user:
+            raise forms.ValidationError('This National ID is already registered.')
+        
+        return national_id
+    
+    def clean_role(self):
+        """Custom validation for role"""
+        role = self.cleaned_data.get('role')
+        
+        # Security: Prevent admin role selection
+        if role == 'admin':
+            raise forms.ValidationError('Admin role cannot be selected during registration.')
+        
+        return role
 
 
 class CollateralForm(forms.ModelForm):

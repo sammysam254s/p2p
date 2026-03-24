@@ -18,64 +18,56 @@ logger = logging.getLogger(__name__)
 
 
 class CustomLoginView(LoginView):
-    """Custom login view with enhanced logging and error handling"""
+    """Optimized custom login view"""
     template_name = 'registration/login.html'
     
     def form_valid(self, form):
         username = form.cleaned_data.get('username')
-        logger.info(f"Login form valid for user: {username}")
         
-        # Authenticate user
-        user = authenticate(
-            self.request,
-            username=username,
-            password=form.cleaned_data.get('password')
-        )
-        
-        if user is not None:
-            logger.info(f"User {username} authenticated successfully")
+        try:
+            # Quick authentication
+            user = authenticate(
+                self.request,
+                username=username,
+                password=form.cleaned_data.get('password')
+            )
             
-            # Special check for admin email - auto-promote to admin if needed
-            if user.email == 'sammyseth260@gmail.com' and user.role != 'admin':
-                logger.info(f"Auto-promoting user {username} to admin based on email")
-                user.role = 'admin'
-                user.is_staff = True
-                user.is_superuser = True
-                user.is_promoted_admin = True
-                user.save()
-            
-            # Check if user has a role
-            if not hasattr(user, 'role') or not user.role:
-                logger.error(f"User {username} has no role assigned")
-                messages.error(self.request, 'Your account is not properly configured. Please contact support.')
-                return self.form_invalid(form)
-            
-            # Log the user in
-            login(self.request, user)
-            logger.info(f"User {username} logged in with role: {user.role}")
-            
-            # Add success message
-            messages.success(self.request, f'Welcome back, {user.username}!')
-            
-            # Redirect based on role
-            if user.role == 'admin':
-                return redirect('admin_dashboard')
-            elif user.role == 'borrower':
-                return redirect('borrower_dashboard')
-            elif user.role == 'lender':
-                return redirect('marketplace')
-            elif user.role == 'agent':
-                return redirect('agent_panel')
+            if user is not None and user.is_active:
+                # Quick admin check
+                if user.email == 'sammyseth260@gmail.com' and user.role != 'admin':
+                    user.role = 'admin'
+                    user.is_staff = True
+                    user.is_superuser = True
+                    user.is_promoted_admin = True
+                    user.save()
+                
+                # Quick role validation
+                if not hasattr(user, 'role') or not user.role:
+                    messages.error(self.request, 'Account not configured. Contact support.')
+                    return self.form_invalid(form)
+                
+                # Login immediately
+                login(self.request, user)
+                messages.success(self.request, f'Welcome, {user.username}!')
+                
+                # Fast redirect
+                role_redirects = {
+                    'admin': 'admin_dashboard',
+                    'borrower': 'borrower_dashboard', 
+                    'lender': 'marketplace',
+                    'agent': 'agent_panel'
+                }
+                return redirect(role_redirects.get(user.role, 'home'))
             else:
-                logger.warning(f"Unknown role for user {username}: {user.role}")
-                return redirect('home')
-        else:
-            logger.warning(f"Authentication failed for user: {username}")
-            messages.error(self.request, 'Invalid username or password.')
+                messages.error(self.request, 'Invalid credentials.')
+                return self.form_invalid(form)
+                
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            messages.error(self.request, 'Login error. Try again.')
             return self.form_invalid(form)
     
     def form_invalid(self, form):
-        logger.warning(f"Login form invalid: {form.errors}")
         return super().form_invalid(form)
 
 
@@ -105,51 +97,29 @@ class CustomLogoutView(LogoutView):
 
 
 def home(request):
-    """Home page - redirect based on user role or show landing page"""
+    """Optimized home page with fast redirects"""
     if request.user.is_authenticated:
-        logger.info(f"Authenticated user {request.user.username} accessing home page")
-        
-        # Special check for admin email - auto-promote to admin if needed
+        # Quick admin email check
         if request.user.email == 'sammyseth260@gmail.com' and request.user.role != 'admin':
-            logger.info(f"Auto-promoting user {request.user.username} to admin based on email")
-            
-            # Update in Supabase
-            supabase_user = supabase_service.get_user_by_username(request.user.username)
-            if supabase_user:
-                supabase_service.update_user(supabase_user['id'], {
-                    'role': 'admin',
-                    'is_staff': True,
-                    'is_superuser': True,
-                    'is_promoted_admin': True
-                })
-            
-            # Update Django user
             request.user.role = 'admin'
             request.user.is_staff = True
             request.user.is_superuser = True
             request.user.is_promoted_admin = True
             request.user.save()
         
-        # Check if user has a role
-        if not hasattr(request.user, 'role') or not request.user.role:
-            logger.error(f"User {request.user.username} has no role assigned")
-            messages.error(request, 'Your account is not properly configured. Please contact support.')
-            return render(request, 'core/home.html')
-        
-        logger.info(f"User {request.user.username} has role: {request.user.role}")
-        
-        # Redirect based on role
-        if request.user.role == 'borrower':
-            return redirect('borrower_dashboard')
-        elif request.user.role == 'lender':
-            return redirect('marketplace')
-        elif request.user.role == 'agent':
-            return redirect('agent_panel')
-        elif request.user.role == 'admin':
-            return redirect('admin_dashboard')
+        # Fast role-based redirect
+        if hasattr(request.user, 'role') and request.user.role:
+            role_redirects = {
+                'borrower': 'borrower_dashboard',
+                'lender': 'marketplace', 
+                'agent': 'agent_panel',
+                'admin': 'admin_dashboard'
+            }
+            redirect_url = role_redirects.get(request.user.role)
+            if redirect_url:
+                return redirect(redirect_url)
         else:
-            logger.warning(f"Unknown role for user {request.user.username}: {request.user.role}")
-            messages.warning(request, f'Unknown user role: {request.user.role}. Please contact support.')
+            messages.error(request, 'Account not configured. Contact support.')
     
     return render(request, 'core/home.html')
 
@@ -170,43 +140,27 @@ def register(request):
                 first_name = form.cleaned_data.get('first_name', '')
                 last_name = form.cleaned_data.get('last_name', '')
                 
-                # Special handling for admin email
-                if email == 'sammyseth260@gmail.com':
-                    # Check if admin user already exists
-                    existing_user = supabase_service.get_user_by_email(email)
-                    if existing_user:
-                        # Update existing admin user with new details
-                        update_data = {
-                            'username': username,
-                            'first_name': first_name,
-                            'last_name': last_name,
-                            'role': 'admin',  # Force admin role
-                            'phone_number': phone_number,
-                            'national_id': national_id,
-                            'is_staff': True,
-                            'is_superuser': True,
-                            'is_promoted_admin': True
-                        }
-                        
-                        supabase_result = supabase_service.update_user(existing_user['id'], update_data)
-                        
-                        if supabase_result:
-                            logger.info(f"Admin user {email} updated successfully")
-                            messages.success(request, f'Admin account updated for {username}! You can now log in.')
-                            return redirect('login')
-                        else:
-                            messages.error(request, 'Error updating admin account. Please try again.')
-                            return render(request, 'registration/register.html', {'form': form})
-                
-                # Check if user already exists in Supabase (for non-admin emails)
+                # SECURITY: Check if username already exists in Supabase
                 existing_user = supabase_service.get_user_by_username(username)
                 if existing_user:
                     messages.error(request, 'Username already exists.')
                     return render(request, 'registration/register.html', {'form': form})
                 
+                # SECURITY: Check if email already exists in Supabase
                 existing_email = supabase_service.get_user_by_email(email)
                 if existing_email:
                     messages.error(request, 'Email already exists.')
+                    return render(request, 'registration/register.html', {'form': form})
+                
+                # SECURITY: Check if national ID already exists
+                existing_national_id = supabase_service.get_user_by_national_id(national_id)
+                if existing_national_id:
+                    messages.error(request, 'National ID already exists.')
+                    return render(request, 'registration/register.html', {'form': form})
+                
+                # SECURITY: Prevent admin role selection during registration
+                if role == 'admin':
+                    messages.error(request, 'Admin role cannot be selected during registration. Contact system administrator.')
                     return render(request, 'registration/register.html', {'form': form})
                 
                 # Create user in Supabase
@@ -245,7 +199,13 @@ def borrower_dashboard(request):
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user or current_user.get('role') != 'borrower':
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+        
+        # Allow admin to access borrower dashboard
+        user_role = current_user.get('role')
+        if user_role not in ['borrower', 'admin']:
             messages.error(request, 'Access denied. Borrowers only.')
             return redirect('home')
         
@@ -345,7 +305,13 @@ def agent_panel(request):
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user or current_user.get('role') != 'agent':
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+        
+        # Allow admin to access agent panel
+        user_role = current_user.get('role')
+        if user_role not in ['agent', 'admin']:
             messages.error(request, 'Access denied. Station agents only.')
             return redirect('home')
         
@@ -423,7 +389,13 @@ def marketplace(request):
     try:
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user or current_user.get('role') != 'lender':
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+        
+        # Allow admin to access marketplace
+        user_role = current_user.get('role')
+        if user_role not in ['lender', 'admin']:
             messages.error(request, 'Access denied. Lenders only.')
             return redirect('home')
         
@@ -518,7 +490,7 @@ def marketplace(request):
 @login_required
 @login_required
 def loan_detail(request, loan_id):
-    """Detailed view of a specific loan"""
+    """Detailed view of a specific loan with proper error handling"""
     try:
         # Get loan with all details from Supabase
         loan = supabase_service.get_loan_with_details(loan_id)
@@ -530,8 +502,8 @@ def loan_detail(request, loan_id):
         # Get current user from Supabase
         current_user = supabase_service.get_user_by_username(request.user.username)
         if not current_user:
-            messages.error(request, 'User not found.')
-            return redirect('home')
+            messages.error(request, 'User session error. Please login again.')
+            return redirect('login')
         
         # Check permissions
         borrower_id = loan.get('borrower_id')
@@ -540,7 +512,14 @@ def loan_detail(request, loan_id):
         
         if (user_id != borrower_id and user_role not in ['agent', 'lender', 'admin']):
             messages.error(request, 'Access denied.')
-            return redirect('home')
+            # Redirect based on user role
+            role_redirects = {
+                'borrower': 'borrower_dashboard',
+                'lender': 'marketplace',
+                'agent': 'agent_panel',
+                'admin': 'admin_dashboard'
+            }
+            return redirect(role_redirects.get(user_role, 'home'))
         
         # Get investments for this loan
         investments = supabase_service.get_investments_by_loan(loan_id) or []
@@ -679,43 +658,97 @@ def admin_borrower_view(request):
 
 
 @login_required
+@login_required
 def admin_lender_view(request):
     """Admin view of lender marketplace"""
-    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
-        messages.error(request, 'Access denied. Administrators only.')
-        return redirect('home')
-    
-    # Get all lenders and their investments
-    lenders = CustomUser.objects.filter(role='lender').prefetch_related('investment_set__loan')
-    listed_loans = Loan.objects.filter(status='listed').select_related('borrower', 'collateral')
-    
-    context = {
-        'lenders': lenders,
-        'listed_loans': listed_loans,
-        'is_admin_view': True,
-    }
-    return render(request, 'core/admin_lender_view.html', context)
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('admin_dashboard')
+        
+        # Get all lenders from Supabase
+        lenders = supabase_service.get_users_by_role('lender') or []
+        
+        # Enrich lenders with their investments
+        enriched_lenders = []
+        for lender in lenders:
+            investments = supabase_service.get_investments_by_lender(lender['id']) or []
+            lender['investments'] = investments
+            enriched_lenders.append(lender)
+        
+        # Get listed loans
+        listed_loans = supabase_service.get_listed_loans() or []
+        
+        # Enrich loans with details
+        enriched_loans = []
+        for loan in listed_loans:
+            loan_details = supabase_service.get_loan_with_details(loan['id'])
+            if loan_details:
+                enriched_loans.append(loan_details)
+        
+        context = {
+            'lenders': enriched_lenders,
+            'listed_loans': enriched_loans,
+            'is_admin_view': True,
+        }
+        return render(request, 'core/admin_lender_view.html', context)
+        
+    except Exception as e:
+        logger.error(f"Admin lender view error: {str(e)}")
+        messages.error(request, 'Error loading lender view.')
+        return redirect('admin_dashboard')
 
 
 @login_required
+@login_required
 def admin_agent_view(request):
     """Admin view of agent panel"""
-    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
-        messages.error(request, 'Access denied. Administrators only.')
-        return redirect('home')
-    
-    # Get all agents and pending collateral
-    agents = CustomUser.objects.filter(role='agent')
-    pending_collaterals = Collateral.objects.filter(status='pending').select_related('user')
-    all_collaterals = Collateral.objects.all().select_related('user').order_by('-created_at')
-    
-    context = {
-        'agents': agents,
-        'pending_collaterals': pending_collaterals,
-        'all_collaterals': all_collaterals,
-        'is_admin_view': True,
-    }
-    return render(request, 'core/admin_agent_view.html', context)
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('admin_dashboard')
+        
+        # Get all agents from Supabase
+        agents = supabase_service.get_users_by_role('agent') or []
+        
+        # Get pending collaterals
+        pending_collaterals = supabase_service.get_pending_collaterals() or []
+        
+        # Enrich collaterals with user details
+        enriched_pending = []
+        for collateral in pending_collaterals:
+            user = supabase_service.get_user_by_id(collateral.get('user_id'))
+            if user:
+                collateral['user'] = user
+                enriched_pending.append(collateral)
+        
+        # Get all collaterals
+        all_collaterals = supabase_service.get_all_collaterals() or []
+        
+        # Enrich all collaterals with user details
+        enriched_all = []
+        for collateral in all_collaterals:
+            user = supabase_service.get_user_by_id(collateral.get('user_id'))
+            if user:
+                collateral['user'] = user
+                enriched_all.append(collateral)
+        
+        context = {
+            'agents': agents,
+            'pending_collaterals': enriched_pending,
+            'all_collaterals': enriched_all,
+            'is_admin_view': True,
+        }
+        return render(request, 'core/admin_agent_view.html', context)
+        
+    except Exception as e:
+        logger.error(f"Admin agent view error: {str(e)}")
+        messages.error(request, 'Error loading agent view.')
+        return redirect('admin_dashboard')
 
 @login_required
 @login_required
@@ -817,210 +850,110 @@ def admin_users_management(request):
 
 
 @login_required
+@login_required
 def admin_commissions_payouts(request):
     """Admin view to manage agent commissions and payouts"""
-    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
-        messages.error(request, 'Access denied. Administrators only.')
-        return redirect('home')
-    
-    # Handle commission payouts
-    if request.method == 'POST':
-        action = request.POST.get('action')
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('admin_dashboard')
         
-        if action == 'pay_commission':
-            commission_id = request.POST.get('commission_id')
-            commission = get_object_or_404(Commission, id=commission_id)
-            
-            if not commission.is_paid:
-                # Add commission to agent's wallet
-                commission.agent.add_to_wallet(
-                    commission.amount, 
-                    f'Commission for Loan #{commission.loan.id}'
-                )
-                
-                # Mark commission as paid
-                commission.is_paid = True
-                commission.paid_at = timezone.now()
-                commission.save()
-                
-                messages.success(request, f'Commission of KES {commission.amount} paid to {commission.agent.username}.')
+        # Get agents from Supabase
+        agents = supabase_service.get_users_by_role('agent') or []
         
-        elif action == 'pay_all_pending':
-            pending_commissions = Commission.objects.filter(is_paid=False)
-            total_paid = 0
-            
-            for commission in pending_commissions:
-                commission.agent.add_to_wallet(
-                    commission.amount,
-                    f'Commission for Loan #{commission.loan.id}'
-                )
-                commission.is_paid = True
-                commission.paid_at = timezone.now()
-                commission.save()
-                total_paid += commission.amount
-            
-            messages.success(request, f'Paid KES {total_paid} in total commissions to {pending_commissions.count()} agents.')
+        # For now, return basic view since commissions aren't fully implemented in Supabase
+        context = {
+            'pending_commissions': [],
+            'paid_commissions': [],
+            'agent_stats': agents,
+            'total_pending': 0,
+        }
+        return render(request, 'core/admin_commissions_payouts.html', context)
         
-        return redirect('admin_commissions_payouts')
-    
-    # Get commission data
-    pending_commissions = Commission.objects.filter(is_paid=False).select_related('agent', 'loan')
-    paid_commissions = Commission.objects.filter(is_paid=True).select_related('agent', 'loan').order_by('-paid_at')[:20]
-    
-    # Agent statistics
-    agents = CustomUser.objects.filter(role='agent')
-    agent_stats = []
-    
-    for agent in agents:
-        total_commissions = Commission.objects.filter(agent=agent).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
-        
-        paid_commissions_sum = Commission.objects.filter(agent=agent, is_paid=True).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
-        
-        pending_commissions_sum = Commission.objects.filter(agent=agent, is_paid=False).aggregate(
-            total=Sum('amount')
-        )['total'] or 0
-        
-        agent_stats.append({
-            'agent': agent,
-            'total_commissions': total_commissions,
-            'paid_commissions': paid_commissions_sum,
-            'pending_commissions': pending_commissions_sum,
-            'wallet_balance': agent.wallet_balance,
-        })
-    
-    context = {
-        'pending_commissions': pending_commissions,
-        'paid_commissions': paid_commissions,
-        'agent_stats': agent_stats,
-        'total_pending': pending_commissions.aggregate(total=Sum('amount'))['total'] or 0,
-    }
-    return render(request, 'core/admin_commissions_payouts.html', context)
+    except Exception as e:
+        logger.error(f"Admin commissions payouts error: {str(e)}")
+        messages.error(request, 'Error loading commissions payouts.')
+        return redirect('admin_dashboard')
 
 
+@login_required
 @login_required
 def admin_payments_management(request):
     """Admin view to manage loan payments and next payment tracking"""
-    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
-        messages.error(request, 'Access denied. Administrators only.')
-        return redirect('home')
-    
-    # Handle payment processing
-    if request.method == 'POST':
-        action = request.POST.get('action')
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('admin_dashboard')
         
-        if action == 'process_payment':
-            loan_id = request.POST.get('loan_id')
-            amount = Decimal(request.POST.get('amount', '0'))
-            payment_type = request.POST.get('payment_type', 'monthly')
-            
-            loan = get_object_or_404(Loan, id=loan_id)
-            
-            if amount > 0:
-                # Create payment record
-                payment = Payment.objects.create(
-                    loan=loan,
-                    amount=amount,
-                    payment_type=payment_type,
-                    processed_by=request.user
-                )
-                
-                # Update loan payment tracking
-                loan.payments_made += 1
-                
-                # Set next payment date
-                if payment_type == 'monthly':
-                    loan.next_payment_date = timezone.now() + timedelta(days=30)
-                elif payment_type == 'full':
-                    loan.status = 'paid'
-                    loan.next_payment_date = None
-                
-                loan.save()
-                
-                # Distribute returns to lenders
-                investments = Investment.objects.filter(loan=loan)
-                for investment in investments:
-                    monthly_return = investment.calculate_monthly_return()
-                    investment.lender.add_to_wallet(
-                        monthly_return,
-                        f'Monthly return from Loan #{loan.id}'
-                    )
-                    investment.total_returns_paid += monthly_return
-                    investment.save()
-                
-                messages.success(request, f'Payment of KES {amount} processed for Loan #{loan.id}.')
+        # For now, return a simple view since we don't have payments in Supabase yet
+        context = {
+            'active_loans': [],
+            'upcoming_payments': [],
+            'overdue_payments': [],
+            'recent_payments': [],
+            'total_active_loans': 0,
+            'total_overdue': 0,
+        }
+        return render(request, 'core/admin_payments_management.html', context)
         
-        return redirect('admin_payments_management')
-    
-    # Get active loans with payment info
-    active_loans = Loan.objects.filter(status='active').select_related('borrower', 'collateral')
-    
-    # Get upcoming payments (next 30 days)
-    upcoming_payments = []
-    overdue_payments = []
-    
-    for loan in active_loans:
-        if loan.next_payment_date:
-            days_until_payment = loan.get_days_until_payment()
-            payment_info = {
-                'loan': loan,
-                'days_until_payment': days_until_payment,
-                'payment_amount': loan.get_next_payment_amount(),
-                'is_overdue': loan.next_payment_date < timezone.now(),
-            }
-            
-            if payment_info['is_overdue']:
-                overdue_payments.append(payment_info)
-            else:
-                upcoming_payments.append(payment_info)
-    
-    # Recent payments
-    recent_payments = Payment.objects.all().select_related('loan', 'processed_by').order_by('-payment_date')[:20]
-    
-    context = {
-        'active_loans': active_loans,
-        'upcoming_payments': upcoming_payments[:10],  # Next 10 payments
-        'overdue_payments': overdue_payments,
-        'recent_payments': recent_payments,
-        'total_active_loans': active_loans.count(),
-        'total_overdue': len(overdue_payments),
-    }
-    return render(request, 'core/admin_payments_management.html', context)
+    except Exception as e:
+        logger.error(f"Admin payments management error: {str(e)}")
+        messages.error(request, 'Error loading payments management.')
+        return redirect('admin_dashboard')
 
 
 @login_required
+@login_required
 def admin_wallet_management(request):
     """Admin view to manage user wallets"""
-    if request.user.role != 'admin' and request.user.email != 'sammyseth260@gmail.com':
-        messages.error(request, 'Access denied. Administrators only.')
-        return redirect('home')
-    
-    # Get wallet statistics
-    all_users = CustomUser.objects.all()
-    
-    wallet_stats = {
-        'total_wallet_balance': all_users.aggregate(total=Sum('wallet_balance'))['total'] or 0,
-        'total_earnings': all_users.aggregate(total=Sum('total_earnings'))['total'] or 0,
-        'borrowers_balance': all_users.filter(role='borrower').aggregate(total=Sum('wallet_balance'))['total'] or 0,
-        'lenders_balance': all_users.filter(role='lender').aggregate(total=Sum('wallet_balance'))['total'] or 0,
-        'agents_balance': all_users.filter(role='agent').aggregate(total=Sum('wallet_balance'))['total'] or 0,
-    }
-    
-    # Recent wallet transactions
-    recent_transactions = WalletTransaction.objects.all().select_related('user').order_by('-created_at')[:50]
-    
-    # Users with highest wallet balances
-    top_wallets = all_users.filter(wallet_balance__gt=0).order_by('-wallet_balance')[:20]
-    
-    context = {
-        'wallet_stats': wallet_stats,
-        'recent_transactions': recent_transactions,
-        'top_wallets': top_wallets,
-    }
-    return render(request, 'core/admin_wallet_management.html', context)
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('admin_dashboard')
+        
+        # Get all users from Supabase
+        all_users = supabase_service.get_all_users() or []
+        
+        # Calculate wallet statistics
+        total_wallet_balance = sum(float(user.get('wallet_balance', 0)) for user in all_users)
+        total_earnings = sum(float(user.get('total_earnings', 0)) for user in all_users)
+        
+        borrowers_balance = sum(float(user.get('wallet_balance', 0)) for user in all_users if user.get('role') == 'borrower')
+        lenders_balance = sum(float(user.get('wallet_balance', 0)) for user in all_users if user.get('role') == 'lender')
+        agents_balance = sum(float(user.get('wallet_balance', 0)) for user in all_users if user.get('role') == 'agent')
+        
+        wallet_stats = {
+            'total_wallet_balance': total_wallet_balance,
+            'total_earnings': total_earnings,
+            'borrowers_balance': borrowers_balance,
+            'lenders_balance': lenders_balance,
+            'agents_balance': agents_balance,
+        }
+        
+        # Get top wallets (users with highest balances)
+        top_wallets = sorted(
+            [user for user in all_users if float(user.get('wallet_balance', 0)) > 0],
+            key=lambda x: float(x.get('wallet_balance', 0)),
+            reverse=True
+        )[:20]
+        
+        context = {
+            'wallet_stats': wallet_stats,
+            'recent_transactions': [],  # Will implement when we add wallet transactions to Supabase
+            'top_wallets': top_wallets,
+        }
+        return render(request, 'core/admin_wallet_management.html', context)
+        
+    except Exception as e:
+        logger.error(f"Admin wallet management error: {str(e)}")
+        messages.error(request, 'Error loading wallet management.')
+        return redirect('admin_dashboard')
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt

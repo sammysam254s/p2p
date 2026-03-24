@@ -321,7 +321,7 @@
     
     <!-- Global JavaScript for loading animations and error handling -->
     <script>
-        // Global loading functions
+        // Optimized global loading functions
         function showGlobalLoader(message = 'Loading...') {
             const loader = document.getElementById('globalLoader');
             if (loader) {
@@ -337,94 +337,58 @@
             }
         }
         
-        // Add loading animation to buttons
-        function addButtonLoading(button, originalText) {
-            if (button) {
-                button.disabled = true;
-                button.classList.add('btn-loading');
-                button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + (originalText || 'Loading...');
-            }
-        }
-        
-        function removeButtonLoading(button, originalText) {
-            if (button) {
-                button.disabled = false;
-                button.classList.remove('btn-loading');
-                button.innerHTML = originalText || 'Submit';
-            }
-        }
-        
-        // Global form submission handler
+        // Optimized page load handling
         document.addEventListener('DOMContentLoaded', function() {
-            // Add loading animation to forms (except those with no-loading class on submit button)
+            // Hide loader immediately when DOM is ready
+            hideGlobalLoader();
+            
+            // Optimize form submissions
             const forms = document.querySelectorAll('form');
             forms.forEach(form => {
                 form.addEventListener('submit', function(e) {
                     const submitBtn = form.querySelector('button[type="submit"]');
                     if (submitBtn && !submitBtn.classList.contains('no-loading')) {
-                        const originalText = submitBtn.innerHTML;
-                        addButtonLoading(submitBtn, 'Processing...');
-                        
-                        // Store original text for potential reset
-                        submitBtn.setAttribute('data-original-text', originalText);
-                        
-                        // Set timeout to reset if something goes wrong
-                        setTimeout(() => {
-                            if (submitBtn.disabled) {
-                                removeButtonLoading(submitBtn, originalText);
-                                console.warn('Form submission timeout - button reset');
-                            }
-                        }, 15000);
+                        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+                        submitBtn.disabled = true;
                     }
                 });
             });
             
-            // Auto-hide alerts after 5 seconds
+            // Auto-hide alerts quickly
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
                 setTimeout(() => {
                     if (alert && alert.parentNode) {
                         alert.style.opacity = '0';
-                        setTimeout(() => {
-                            if (alert.parentNode) {
-                                alert.parentNode.removeChild(alert);
-                            }
-                        }, 300);
+                        setTimeout(() => alert.remove(), 200);
                     }
-                }, 5000);
-            });
-            
-            // Add click animations to cards
-            const cards = document.querySelectorAll('.card');
-            cards.forEach(card => {
-                card.addEventListener('click', function() {
-                    this.style.transform = 'scale(0.98)';
-                    setTimeout(() => {
-                        this.style.transform = '';
-                    }, 150);
-                });
-            });
-            
-            // Log page load
-            console.log('Page loaded:', window.location.pathname, 'at', new Date().toISOString());
-            
-            // Log any JavaScript errors
-            window.addEventListener('error', function(e) {
-                console.error('JavaScript error:', e.error, 'at', e.filename, ':', e.lineno);
+                }, 3000); // Reduced from 5000 to 3000
             });
         });
         
-        // Navigation loading
+        // Fast navigation handling
         document.addEventListener('click', function(e) {
             const link = e.target.closest('a[href]');
-            if (link && !link.getAttribute('href').startsWith('#') && !link.getAttribute('href').startsWith('javascript:')) {
-                showGlobalLoader('Navigating...');
+            if (link && !link.getAttribute('href').startsWith('#') && 
+                !link.getAttribute('href').startsWith('javascript:') &&
+                !link.getAttribute('href').includes('logout')) {
+                // Only show loader for internal navigation
+                if (link.hostname === window.location.hostname) {
+                    showGlobalLoader('Loading...');
+                }
             }
         });
         
-        // Hide loader when page loads
-        window.addEventListener('load', function() {
+        // Hide loader on page load
+        window.addEventListener('load', hideGlobalLoader);
+        
+        // Hide loader on back/forward navigation
+        window.addEventListener('pageshow', function(event) {
             hideGlobalLoader();
+            if (event.persisted) {
+                // Page was loaded from cache, refresh if needed
+                console.log('Page loaded from cache');
+            }
         });
     </script>
     

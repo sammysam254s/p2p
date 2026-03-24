@@ -147,6 +147,15 @@ class SupabaseUserService:
             return user
         return None
     
+    def get_user_by_national_id(self, national_id):
+        """Get user by national ID"""
+        all_users = self.client.select('users')
+        if all_users:
+            for user in all_users:
+                if user.get('national_id') == national_id:
+                    return user
+        return None
+    
     def get_all_users(self):
         """Get all users"""
         return self.client.select('users', order='created_at.desc')
