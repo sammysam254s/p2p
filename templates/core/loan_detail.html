@@ -130,7 +130,7 @@
                             {% endif %}
                             <tr>
                                 <td><strong>Loan-to-Value:</strong></td>
-                                <td>{{ loan.principal_amount|div:loan.collateral.market_value|mul:100|floatformat:1 }}%</td>
+                                <td>{{ loan.loan_to_value_ratio|floatformat:1 }}%</td>
                             </tr>
                         </table>
                     </div>
@@ -161,7 +161,7 @@
                                 <td>{{ investment.lender.username }}</td>
                                 <td>KES {{ investment.amount_invested|floatformat:2 }}</td>
                                 <td>{{ investment.date|date:"M d, Y H:i" }}</td>
-                                <td>{{ investment.amount_invested|div:loan.principal_amount|mul:100|floatformat:1 }}%</td>
+                                <td>{{ investment.share_percentage|floatformat:1 }}%</td>
                             </tr>
                             {% endfor %}
                         </tbody>

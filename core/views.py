@@ -1110,6 +1110,9 @@ def loan_detail(request, loan_id):
                 # Add date compatibility
                 if 'date' not in investment and 'created_at' in investment:
                     investment['date'] = investment['created_at']
+                # Add investment share calculation
+                investment_amount = float(investment.get('amount_invested', 0))
+                investment['share_percentage'] = (investment_amount / principal_amount * 100) if principal_amount > 0 else 0
             
             # Calculate loan metrics safely
             principal_amount = float(loan.get('principal_amount', 0))
@@ -1161,6 +1164,10 @@ def loan_detail(request, loan_id):
                 }
                 collateral['get_status_display'] = collateral_status_map.get(collateral.get('status', 'pending'), collateral.get('status', 'Unknown').title())
                 loan['collateral'] = collateral
+                
+                # Calculate loan-to-value ratio
+                collateral_value = float(collateral.get('market_value', 1))
+                loan['loan_to_value_ratio'] = (principal_amount / collateral_value * 100) if collateral_value > 0 else 0
             
             # Add user context
             loan['can_invest'] = (

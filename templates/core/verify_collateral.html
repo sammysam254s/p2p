@@ -219,15 +219,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitButton = document.querySelector('button[type="submit"]');
     const checkboxes = document.querySelectorAll('.form-check-input');
     
-    // Real-time calculation update
+    // Real-time calculation update with debouncing to prevent blinking
+    let updateTimeout;
     verifiedValueInput.addEventListener('input', function() {
-        const value = parseFloat(this.value) || 0;
-        const devaluedAmount = value * 0.70;
-        const maxLoanAmount = devaluedAmount * 0.50;
-        
-        verifiedValueDisplay.textContent = `KES ${value.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-        devaluedAmountDisplay.textContent = `KES ${devaluedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-        maxLoanAmountDisplay.innerHTML = `<strong>KES ${maxLoanAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>`;
+        clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(() => {
+            const value = parseFloat(this.value) || 0;
+            const devaluedAmount = value * 0.70;
+            const maxLoanAmount = devaluedAmount * 0.50;
+            
+            verifiedValueDisplay.textContent = `KES ${value.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            devaluedAmountDisplay.textContent = `KES ${devaluedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            maxLoanAmountDisplay.innerHTML = `<strong>KES ${maxLoanAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>`;
+        }, 300); // 300ms delay to prevent excessive updates
     });
     
     // Checklist validation
