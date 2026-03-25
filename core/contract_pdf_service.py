@@ -474,9 +474,10 @@ class SecureLendContractPDF:
         try:
             qr_image = Image(qr_buffer, width=2*inch, height=2*inch)
             content.append(qr_image)
-        except:
-            # Fallback if QR code generation fails
-            pass
+        except Exception as e:
+            logger.error(f"Failed to add QR code to PDF: {str(e)}")
+            # QR code is required, so raise the error
+            raise e
         
         verification_text = f"""
         <b>Scan QR Code to Verify Contract</b><br/>
