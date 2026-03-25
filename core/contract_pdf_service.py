@@ -138,8 +138,10 @@ class SecureLendContractPDF:
             pdf_bytes = pdf_buffer.read()
             pdf_buffer.close()
             
-            # Upload to Supabase Storage
+            # Upload to Supabase Storage - MANDATORY, NO FALLBACKS
             try:
+                logger.info(f"Uploading contract PDF to Supabase Storage: {filename}")
+                
                 # Upload to Supabase Storage bucket 'contracts'
                 upload_result = supabase.storage.from_('contracts').upload(
                     filename, 
@@ -147,38 +149,38 @@ class SecureLendContractPDF:
                     file_options={'content-type': 'application/pdf'}
                 )
                 
-                if upload_result:
-                    # Get public URL
-                    public_url = supabase.storage.from_('contracts').get_public_url(filename)
-                    
-                    logger.info(f"Contract PDF uploaded to Supabase Storage: {filename}")
-                    return {
-                        'success': True,
-                        'filepath': f'contracts/{filename}',
-                        'filename': filename,
-                        'contract_id': contract_id,
-                        'url': public_url,
-                        'storage_path': f'contracts/{filename}'
-                    }
-                else:
-                    logger.error(f"Failed to upload PDF to Supabase Storage: {filename}")
-                    return {
-                        'success': False,
-                        'error': 'Failed to upload PDF to Supabase Storage'
-                    }
-                    
-            except Exception as storage_error:
-                logger.error(f"Supabase Storage error: {str(storage_error)}")
+                if not upload_result:
+                    raise Exception("Upload returned no result")
                 
-                # If Supabase Storage fails, we cannot provide a working URL
-                # Return error instead of placeholder
+                # Get public URL - this MUST be a Supabase URL
+                public_url = supabase.storage.from_('contracts').get_public_url(filename)
+                
+                # Validate URL format
+                if not public_url or 'supabase' not in public_url.lower():
+                    raise Exception(f"Invalid Supabase URL generated: {public_url}")
+                
+                logger.info(f"✅ Contract PDF uploaded successfully: {public_url}")
+                
+                return {
+                    'success': True,
+                    'filepath': f'contracts/{filename}',
+                    'filename': filename,
+                    'contract_id': contract_id,
+                    'url': public_url,  # GUARANTEED to be Supabase URL
+                    'storage_path': f'contracts/{filename}'
+                }
+                
+            except Exception as storage_error:
+                logger.error(f"❌ CRITICAL: Supabase Storage upload failed: {str(storage_error)}")
+                
+                # NO FALLBACKS - if Supabase Storage fails, the whole operation fails
                 return {
                     'success': False,
-                    'error': f'Supabase Storage upload failed: {str(storage_error)}'
+                    'error': f'Supabase Storage upload failed: {str(storage_error)}. Check bucket configuration.'
                 }
             
         except Exception as e:
-            logger.error(f"Error generating contract PDF: {str(e)}")
+            logger.error(f"❌ Contract PDF generation failed: {str(e)}")
             return {
                 'success': False,
                 'error': str(e)
