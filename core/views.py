@@ -280,7 +280,7 @@ def borrower_dashboard(request):
                     'email': request.user.email
                 }
         
-        # Check KYC status from Supabase (primary database)
+        # Check KYC status from Supabase (PRIMARY database - NO Django fallback)
         kyc_verified = False
         kyc_status = 'pending'
         kyc_exists = False
@@ -290,7 +290,7 @@ def borrower_dashboard(request):
             kyc_status = 'admin_access'
             kyc_exists = True
         else:
-            # Get KYC status from Supabase first
+            # Get KYC status from Supabase ONLY (no Django fallback)
             try:
                 if current_user and current_user.get('id'):
                     # Check if user has KYC record in Supabase
@@ -301,45 +301,43 @@ def borrower_dashboard(request):
                         kyc_status = kyc_record.get('status', 'pending')
                         kyc_verified = kyc_status == 'verified'
                         kyc_exists = True
-                        logger.info(f"KYC status from Supabase for {request.user.username}: {kyc_status}")
+                        logger.info(f"KYC status from Supabase for {request.user.username}: {kyc_status} (verified: {kyc_verified})")
                     else:
-                        # No KYC record in Supabase, check Django as fallback
+                        # Create a pending KYC record in Supabase (ensure persistence)
+                        import uuid
                         try:
-                            kyc = request.user.kyc
-                            kyc_verified = kyc.is_verified()
-                            kyc_status = kyc.status
-                            kyc_exists = True
-                            logger.info(f"KYC status from Django for {request.user.username}: {kyc_status}")
-                        except KYCVerification.DoesNotExist:
-                            # Create a pending KYC record in Django
-                            try:
-                                kyc = KYCVerification.objects.create(
-                                    user=request.user,
-                                    full_name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
-                                    id_number="",
-                                    date_of_birth=timezone.now().date(),
-                                    status='pending'
-                                )
+                            kyc_data = {
+                                'id': str(uuid.uuid4()),
+                                'user_id': current_user['id'],
+                                'full_name': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                                'id_number': '',
+                                'date_of_birth': timezone.now().date().isoformat(),
+                                'status': 'pending',
+                                'created_at': timezone.now().isoformat(),
+                                'updated_at': timezone.now().isoformat()
+                            }
+                            
+                            create_result = supabase.table('kyc_verifications').insert(kyc_data).execute()
+                            if create_result.data:
                                 kyc_verified = False
                                 kyc_status = 'pending'
                                 kyc_exists = True
-                                logger.info(f"Created KYC record for user {request.user.username}")
-                            except Exception as e:
-                                logger.error(f"Error creating KYC record: {str(e)}")
+                                logger.info(f"Created KYC record in Supabase for user {request.user.username}")
+                            else:
+                                logger.error(f"Failed to create KYC record in Supabase for {request.user.username}")
                                 kyc_verified = False
                                 kyc_status = 'pending'
                                 kyc_exists = False
+                        except Exception as e:
+                            logger.error(f"Error creating KYC record in Supabase: {str(e)}")
+                            kyc_verified = False
+                            kyc_status = 'pending'
+                            kyc_exists = False
                 else:
-                    # Fallback to Django if no Supabase user
-                    try:
-                        kyc = request.user.kyc
-                        kyc_verified = kyc.is_verified()
-                        kyc_status = kyc.status
-                        kyc_exists = True
-                    except KYCVerification.DoesNotExist:
-                        kyc_verified = False
-                        kyc_status = 'pending'
-                        kyc_exists = False
+                    logger.warning(f"No Supabase user found for {request.user.username}")
+                    kyc_verified = False
+                    kyc_status = 'pending'
+                    kyc_exists = False
                         
             except Exception as e:
                 logger.error(f"KYC check error: {str(e)}")
@@ -483,11 +481,11 @@ def borrower_dashboard(request):
                         messages.error(request, 'Error creating loan record. Please try again.')
                         return redirect('borrower_dashboard')
                     
-                    # Also create in Django for admin interface (secondary)
+                    # Also create in Django for admin interface (secondary) - OPTIONAL
                     try:
                         django_collateral = collateral_form.save(commit=False)
                         django_collateral.user = request.user
-                        django_collateral.estimated_value = django_collateral.market_value  # Copy market_value to estimated_value
+                        django_collateral.estimated_value = django_collateral.market_value  # Copy market_value to estimated_value for Django compatibility
                         django_collateral.save()
                         
                         django_loan = loan_form.save(commit=False)
@@ -507,7 +505,7 @@ def borrower_dashboard(request):
                         'You will be notified once the verification is complete and your loan is listed for funding.')
                     
                     logger.info(f"Loan created successfully in Supabase for {request.user.username}: "
-                              f"Amount: KES {requested_amount:,.2f}, Collateral: {collateral_data['brand_model']}")
+                              f"Amount: KES {requested_amount:,.2f}, Collateral: {supabase_collateral['brand_model']}")
                     
                     return redirect('borrower_dashboard')
                         
@@ -1450,41 +1448,114 @@ def admin_wallet_management(request):
 
 @login_required
 def kyc_verification(request):
-    """Fast KYC verification with automatic processing"""
+    """Supabase-only KYC verification with persistent storage - NO Django dependencies"""
     try:
-        # Get or create KYC verification record
-        kyc, created = KYCVerification.objects.get_or_create(
-            user=request.user,
-            defaults={
-                'full_name': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
-                'id_number': "",
-                'date_of_birth': timezone.now().date(),
-                'status': 'pending'
-            }
-        )
+        # Get current user from Supabase (ONLY source - no Django fallback)
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            # Create user in Supabase if not exists (ensure persistence)
+            try:
+                current_user = supabase_service.create_user(
+                    username=request.user.username,
+                    email=request.user.email,
+                    password="",  # Password not needed for existing users
+                    role=getattr(request.user, 'role', 'borrower'),
+                    phone_number=getattr(request.user, 'phone_number', ''),
+                    national_id=getattr(request.user, 'national_id', ''),
+                    first_name=request.user.first_name,
+                    last_name=request.user.last_name
+                )
+                if current_user and isinstance(current_user, list) and len(current_user) > 0:
+                    current_user = current_user[0]
+                logger.info(f"Created user in Supabase for KYC: {request.user.username}")
+            except Exception as e:
+                logger.error(f"Error creating user in Supabase: {str(e)}")
+                messages.error(request, 'User profile error. Please contact support.')
+                return redirect('home')
         
-        if created:
-            logger.info(f"Created new KYC record for user {request.user.username}")
+        if not current_user:
+            messages.error(request, 'User not found in system. Please contact support.')
+            return redirect('home')
+        
+        user_id = current_user['id']
+        
+        # Get KYC record from Supabase (ONLY source - no Django fallback)
+        kyc_result = supabase.table('kyc_verifications').select('*').eq('user_id', user_id).execute()
+        
+        if kyc_result.data:
+            kyc = kyc_result.data[0]
+            logger.info(f"Found existing KYC record for {request.user.username}: status={kyc.get('status')}")
+        else:
+            # Create new KYC record in Supabase (ensure persistence)
+            import uuid
+            kyc_data = {
+                'id': str(uuid.uuid4()),
+                'user_id': user_id,
+                'full_name': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                'id_number': '',
+                'date_of_birth': timezone.now().date().isoformat(),
+                'status': 'pending',
+                'created_at': timezone.now().isoformat(),
+                'updated_at': timezone.now().isoformat()
+            }
+            
+            create_result = supabase.table('kyc_verifications').insert(kyc_data).execute()
+            if create_result.data:
+                kyc = create_result.data[0]
+                logger.info(f"Created NEW KYC record in Supabase for user {request.user.username}")
+            else:
+                logger.error(f"Failed to create KYC record in Supabase for {request.user.username}")
+                messages.error(request, 'Error creating KYC record. Please try again.')
+                return redirect('borrower_dashboard')
         
         if request.method == 'POST':
-            form = KYCVerificationForm(request.POST, request.FILES, instance=kyc)
-            if form.is_valid():
-                kyc = form.save(commit=False)
-                kyc.status = 'under_review'
-                kyc.save()
+            # Get form data
+            full_name = request.POST.get('full_name', '').strip()
+            id_number = request.POST.get('id_number', '').strip()
+            date_of_birth = request.POST.get('date_of_birth', '')
+            
+            # Validate required fields
+            if not full_name or not id_number or not date_of_birth:
+                messages.error(request, 'Please fill in all required fields.')
+                return redirect('kyc_verification')
+            
+            if len(id_number) < 6:
+                messages.error(request, 'ID number must be at least 6 characters long.')
+                return redirect('kyc_verification')
+            
+            # Update KYC record in Supabase (ONLY - no Django)
+            update_data = {
+                'full_name': full_name,
+                'id_number': id_number,
+                'date_of_birth': date_of_birth,
+                'status': 'under_review',
+                'updated_at': timezone.now().isoformat()
+            }
+            
+            update_result = supabase.table('kyc_verifications').update(update_data).eq('id', kyc['id']).execute()
+            
+            if update_result.data:
+                logger.info(f"Updated KYC record in Supabase for {request.user.username}")
                 
-                # Immediate automatic verification for faster processing
+                # Run simple verification immediately (NO AI - simple text matching only)
                 try:
                     if KYC_SERVICE_AVAILABLE and simple_kyc_service:
-                        # Run simple verification immediately
-                        verification_result = simple_kyc_service.verify_kyc_submission(kyc)
+                        # Create a mock KYC object for verification
+                        class MockKYC:
+                            def __init__(self, data):
+                                self.full_name = data['full_name']
+                                self.id_number = data['id_number']
+                                self.date_of_birth = timezone.datetime.fromisoformat(data['date_of_birth']).date()
+                                self.user = type('User', (), {'username': current_user['username']})()
+                        
+                        mock_kyc = MockKYC(update_result.data[0])
+                        verification_result = simple_kyc_service.verify_kyc_submission(mock_kyc)
                         logger.info(f"Simple KYC verification result for {request.user.username}: {verification_result}")
                     else:
-                        # Fast fallback verification when service is not available
-                        # Check basic requirements: name and ID number must be provided
-                        if kyc.full_name and kyc.id_number and len(kyc.id_number) >= 6:
+                        # Basic verification when service not available (NO AI dependencies)
+                        if full_name and id_number and len(id_number) >= 6:
                             verification_result = {
-                                'overall_score': 95, 
+                                'overall_score': 95,
                                 'status': 'verified',
                                 'passed': True,
                                 'message': 'Basic verification completed - all required fields provided',
@@ -1492,97 +1563,99 @@ def kyc_verification(request):
                             }
                         else:
                             verification_result = {
-                                'overall_score': 30, 
+                                'overall_score': 30,
                                 'status': 'rejected',
                                 'passed': False,
                                 'message': 'Missing required information',
                                 'details': 'Please provide complete name and valid ID number'
                             }
                     
-                    kyc.ai_verification_result = verification_result
-                    kyc.verification_score = verification_result.get('overall_score', 0)
-                    
-                    # Auto-approve if score is high enough (faster processing)
+                    # Update KYC status based on verification result (PERSIST in Supabase ONLY)
                     if verification_result.get('passed', False) and verification_result.get('overall_score', 0) >= 80:
-                        kyc.status = 'verified'
-                        kyc.verified_at = timezone.now()
-                        messages.success(request, 
-                            'KYC verification completed successfully! ✅ You can now apply for loans. '
-                            'Your identity has been verified and all borrower features are now available.')
-                        logger.info(f"KYC auto-approved for {request.user.username} with score {verification_result.get('overall_score')}")
+                        final_status = 'verified'
+                        verified_at = timezone.now().isoformat()
+                        
+                        final_update = supabase.table('kyc_verifications').update({
+                            'status': final_status,
+                            'verified_at': verified_at,
+                            'verification_score': verification_result.get('overall_score', 0),
+                            'updated_at': timezone.now().isoformat()
+                        }).eq('id', kyc['id']).execute()
+                        
+                        if final_update.data:
+                            logger.info(f"KYC VERIFIED and PERSISTED in Supabase for {request.user.username} with score {verification_result.get('overall_score')}")
+                            messages.success(request,
+                                '🎉 KYC verification completed successfully! ✅ You can now apply for loans. '
+                                'Your identity has been verified and all borrower features are now available.')
+                        else:
+                            logger.error(f"Failed to persist KYC verification status for {request.user.username}")
+                            messages.error(request, 'Error updating verification status. Please try again.')
                     else:
-                        kyc.status = 'rejected'
+                        final_status = 'rejected'
                         error_msg = verification_result.get('message', 'Verification failed')
-                        messages.error(request, 
+                        
+                        final_update = supabase.table('kyc_verifications').update({
+                            'status': final_status,
+                            'verification_score': verification_result.get('overall_score', 0),
+                            'updated_at': timezone.now().isoformat()
+                        }).eq('id', kyc['id']).execute()
+                        
+                        if final_update.data:
+                            logger.warning(f"KYC REJECTED and PERSISTED in Supabase for {request.user.username}: {error_msg}")
+                        
+                        messages.error(request,
                             f'KYC verification failed: {error_msg}. '
                             'Please check your information and try again. '
                             'Ensure your name matches your ID document exactly.')
-                        logger.warning(f"KYC rejected for {request.user.username}: {error_msg}")
-                    
-                    kyc.save()
                     
                 except Exception as e:
                     logger.error(f"KYC verification error for {request.user.username}: {str(e)}")
-                    # Fallback to manual review on error
-                    kyc.status = 'under_review'
-                    kyc.save()
-                    messages.info(request, 
+                    # Fallback to manual review on error (PERSIST in Supabase)
+                    supabase.table('kyc_verifications').update({
+                        'status': 'under_review',
+                        'updated_at': timezone.now().isoformat()
+                    }).eq('id', kyc['id']).execute()
+                    
+                    messages.info(request,
                         'KYC submitted for review. Our team will verify your documents within 24 hours. '
                         'You will receive a notification once the verification is complete.')
                 
                 return redirect('kyc_verification')
             else:
-                # Form has errors - show detailed error messages
-                error_messages = []
-                for field, errors in form.errors.items():
-                    for error in errors:
-                        error_messages.append(f"{field.replace('_', ' ').title()}: {error}")
-                
-                messages.error(request, 
-                    'Please correct the following errors: ' + '; '.join(error_messages))
-        else:
-            form = KYCVerificationForm(instance=kyc)
+                logger.error(f"Failed to update KYC information in Supabase for {request.user.username}")
+                messages.error(request, 'Error updating KYC information. Please try again.')
         
-        # Add helpful context for the user
+        # Get updated KYC data for display (ONLY from Supabase)
+        kyc_result = supabase.table('kyc_verifications').select('*').eq('user_id', user_id).execute()
+        if kyc_result.data:
+            kyc = kyc_result.data[0]
+            logger.info(f"Displaying KYC status for {request.user.username}: {kyc.get('status')}")
+        
+        # Create form-like object for template compatibility (NO Django forms)
+        form_data = {
+            'full_name': kyc.get('full_name', ''),
+            'id_number': kyc.get('id_number', ''),
+            'date_of_birth': kyc.get('date_of_birth', '')
+        }
+        
+        # Add helpful context for the user (NO AI results)
         context = {
-            'form': form,
             'kyc': kyc,
-            'can_submit': kyc.status in ['pending', 'rejected'],
+            'form': form_data,  # Simple dict instead of Django form
+            'can_submit': kyc.get('status') in ['pending', 'rejected'],
             'verification_tips': [
                 'Ensure your full name matches your ID document exactly',
                 'Provide a clear, valid national ID number',
-                'Upload clear, readable photos of your ID documents',
-                'Make sure all information is accurate and complete'
+                'Make sure all information is accurate and complete',
+                'Double-check spelling and number accuracy'
             ]
         }
         return render(request, 'core/kyc_verification.html', context)
         
     except Exception as e:
-        logger.error(f"KYC verification error: {str(e)}")
+        logger.error(f"KYC verification critical error: {str(e)}")
         messages.error(request, f'Error loading KYC verification. Please try again or contact support if the problem persists.')
-        
-        # Create a fallback context
-        try:
-            kyc, created = KYCVerification.objects.get_or_create(
-                user=request.user,
-                defaults={
-                    'full_name': request.user.username,
-                    'id_number': "",
-                    'date_of_birth': timezone.now().date(),
-                    'status': 'pending'
-                }
-            )
-            form = KYCVerificationForm(instance=kyc)
-            context = {
-                'form': form,
-                'kyc': kyc,
-                'can_submit': True,
-                'verification_tips': []
-            }
-            return render(request, 'core/kyc_verification.html', context)
-        except Exception as fallback_error:
-            logger.error(f"KYC fallback error: {str(fallback_error)}")
-            return redirect('borrower_dashboard')
+        return redirect('borrower_dashboard')
 
 
 @login_required

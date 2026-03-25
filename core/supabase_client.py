@@ -7,6 +7,59 @@ from decouple import config
 from decimal import Decimal
 
 
+class SupabaseTable:
+    """Table interface for chaining Supabase operations"""
+    
+    def __init__(self, client, table_name):
+        self.client = client
+        self.table_name = table_name
+        self._filters = {}
+        self._columns = "*"
+        self._order = None
+        self._limit = None
+    
+    def select(self, columns="*"):
+        """Select specific columns"""
+        self._columns = columns
+        return self
+    
+    def eq(self, column, value):
+        """Add equality filter"""
+        self._filters[column] = f'eq.{value}'
+        return self
+    
+    def execute(self):
+        """Execute the query"""
+        if hasattr(self, '_insert_data'):
+            # Insert operation
+            return type('Result', (), {'data': self.client.insert(self.table_name, self._insert_data)})()
+        elif hasattr(self, '_update_data'):
+            # Update operation
+            return type('Result', (), {'data': self.client.update(self.table_name, self._update_data, self._filters)})()
+        elif hasattr(self, '_delete_flag'):
+            # Delete operation
+            return type('Result', (), {'data': self.client.delete(self.table_name, self._filters)})()
+        else:
+            # Select operation
+            result = self.client.select(self.table_name, self._columns, self._filters, self._order, self._limit)
+            return type('Result', (), {'data': result})()
+    
+    def insert(self, data):
+        """Insert data"""
+        self._insert_data = data
+        return self
+    
+    def update(self, data):
+        """Update data"""
+        self._update_data = data
+        return self
+    
+    def delete(self):
+        """Delete data"""
+        self._delete_flag = True
+        return self
+
+
 class SupabaseClient:
     def __init__(self):
         self.url = config('SUPABASE_URL')
@@ -17,6 +70,10 @@ class SupabaseClient:
             'Content-Type': 'application/json',
             'Prefer': 'return=representation'
         }
+    
+    def table(self, table_name):
+        """Return a table interface for chaining operations"""
+        return SupabaseTable(self, table_name)
     
     def _make_request(self, method, endpoint, data=None, params=None):
         """Make HTTP request to Supabase REST API"""
