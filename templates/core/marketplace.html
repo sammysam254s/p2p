@@ -41,8 +41,11 @@
             <a href="{% url 'wallet_transactions' %}" class="list-group-item list-group-item-action">
                 <i class="fas fa-wallet me-3 text-success"></i>
                 <span>Wallet Balance</span>
-                <div class="fw-bold text-success">KES {{ wallet_balance|floatformat:2 }}</div>
+                <div class="fw-bold text-success" id="walletBalanceDisplay">KES {{ wallet_balance|floatformat:2 }}</div>
                 <small class="text-muted">Click to manage wallet</small>
+                <button class="btn btn-sm btn-outline-success mt-1" onclick="refreshWalletBalance(); return false;">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
             </a>
             
             <!-- Wallet Deposit -->
@@ -385,7 +388,21 @@
 // Wallet balance check for investments
 function checkWalletBalance(event, form) {
     const investmentAmount = parseFloat(form.querySelector('input[name="investment_amount"]').value) || 0;
-    const walletBalance = {{ wallet_balance }};
+    
+    // Get current wallet balance from the page (in case it was updated after deposit)
+    const walletBalanceElement = document.querySelector('#currentBalance');
+    let walletBalance = {{ wallet_balance }};
+    
+    // If we can find the current balance element, use that instead
+    if (walletBalanceElement) {
+        const balanceText = walletBalanceElement.textContent.replace(/[^\d.]/g, '');
+        const currentBalance = parseFloat(balanceText) || 0;
+        if (currentBalance > 0) {
+            walletBalance = currentBalance;
+        }
+    }
+    
+    console.log(`Investment: ${investmentAmount}, Wallet: ${walletBalance}`); // Debug log
     
     if (investmentAmount > walletBalance) {
         event.preventDefault();
@@ -426,6 +443,29 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     });
+    
+    // Refresh wallet balance if page was loaded after a deposit
+    const urlParams = new URLSearchParams(window.location.search);
+    if (document.referrer.includes('wallet') || window.location.href.includes('deposit')) {
+        // Page was likely loaded after a wallet operation, refresh in 1 second
+        setTimeout(function() {
+            location.reload();
+        }, 1000);
+    }
+    
+    // Add wallet balance refresh function
+    window.refreshWalletBalance = function() {
+        // For now, just reload the page
+        // In production, this could be an AJAX call to get updated balance
+        location.reload();
+    };
+    
+    // Auto-refresh wallet balance after successful deposits
+    if (window.location.search.includes('deposit_success')) {
+        setTimeout(function() {
+            location.reload();
+        }, 500);
+    }
 });
 </script>
 {% endblock %}

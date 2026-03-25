@@ -1639,6 +1639,12 @@ def wallet_deposit(request):
                         messages.success(request, 
                             f'✅ SIMULATED DEPOSIT: Successfully added KES {amount:,.2f} to your wallet! '
                             f'(In production, this would process via {payment_method})')
+                        
+                        # Add success parameter to URL for auto-refresh
+                        redirect_url = request.META.get('HTTP_REFERER', 'home')
+                        if 'marketplace' in redirect_url:
+                            redirect_url += '?deposit_success=1' if '?' not in redirect_url else '&deposit_success=1'
+                        return redirect(redirect_url)
                     else:
                         messages.error(request, 'Simulated deposit failed. Please check the logs and try again.')
                         
