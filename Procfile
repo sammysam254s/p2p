@@ -1,1 +1,0 @@
-web: gunicorn secure_lend.wsgi:application

@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --primary-green: #059669;
+    --secondary-green: #10b981;
+    --light-green: #34d399;
+    --dark-green: #047857;
+    --success-green: #22c55e;
+    --clean-white: #ffffff;
+    --light-gray: #f0fdf4;
+    --accent-green: #16a34a;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--light-gray);
+}
+
+.navbar-brand {
+    font-weight: bold;
+    color: var(--clean-white) !important;
+}
+
+.navbar.bg-primary {
+    background: linear-gradient(135deg, var(--primary-green), var(--secondary-green)) !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+    background: var(--clean-white);
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover, .btn-primary:focus {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+    transform: translateY(-1px);
+}
+
+.form-control {
+    border-radius: 8px;
+    border: 1px solid #d1fae5;
+    padding: 12px;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: var(--secondary-green);
+    box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+    transform: scale(1.02);
+}
