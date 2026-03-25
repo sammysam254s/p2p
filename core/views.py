@@ -928,16 +928,98 @@ def marketplace(request):
                                 
                                 if transfer_success:
                                     logger.info(f"FAST: Transferred KES {loan['principal_amount']} to borrower {borrower_id}")
-                                    messages.success(request, 
-                                        f'🎉 Investment successful! KES {investment_amount:,.2f} invested. '
-                                        f'Loan fully funded - KES {loan["principal_amount"]:,.2f} transferred to borrower.')
                                 else:
                                     logger.error(f"Failed to transfer funds to borrower {borrower_id}")
+                            
+                            # AUTO-GENERATE PDF CONTRACT when loan is fully funded
+                            try:
+                                from .contract_pdf_service import contract_pdf_service
+                                from .contract_verification import contract_verification_service
+                                
+                                # Get full loan details with all related data
+                                full_loan_data = supabase_service.get_loan_with_details(loan_id)
+                                if full_loan_data:
+                                    # Get borrower data
+                                    borrower_data = supabase_service.get_user_by_id(borrower_id)
+                                    
+                                    # Get all lenders for this loan
+                                    loan_investments = supabase_service.get_investments_by_loan(loan_id) or []
+                                    lenders_data = []
+                                    lender_ids = []
+                                    
+                                    for investment in loan_investments:
+                                        lender = supabase_service.get_user_by_id(investment['lender_id'])
+                                        if lender:
+                                            lender['amount_invested'] = investment['amount_invested']
+                                            lenders_data.append(lender)
+                                            lender_ids.append(lender['id'])
+                                    
+                                    # Get borrower KYC data
+                                    kyc_data = supabase_service.get_kyc_by_user_id(borrower_id) or {}
+                                    
+                                    # Generate PDF contract
+                                    pdf_result = contract_pdf_service.generate_contract_pdf(
+                                        loan_data=full_loan_data,
+                                        borrower_data=borrower_data,
+                                        lenders_data=lenders_data,
+                                        kyc_data=kyc_data
+                                    )
+                                    
+                                    if pdf_result.get('success'):
+                                        # Create contract verification record
+                                        contract_record = contract_verification_service.create_contract_record(
+                                            loan_id=loan_id,
+                                            contract_id=pdf_result['contract_id'],
+                                            pdf_url=pdf_result['url'],
+                                            borrower_id=borrower_id,
+                                            lender_ids=lender_ids
+                                        )
+                                        
+                                        if contract_record:
+                                            logger.info(f"✅ PDF contract generated for loan {loan_id}: {pdf_result['filename']}")
+                                            
+                                            if transfer_success:
+                                                messages.success(request, 
+                                                    f'🎉 Investment successful! KES {investment_amount:,.2f} invested. '
+                                                    f'Loan fully funded - KES {loan["principal_amount"]:,.2f} transferred to borrower. '
+                                                    f'📄 Legal contract automatically generated!')
+                                            else:
+                                                messages.success(request, 
+                                                    f'🎉 Investment successful! KES {investment_amount:,.2f} invested. '
+                                                    f'Loan fully funded! 📄 Legal contract automatically generated!')
+                                        else:
+                                            logger.error(f"Failed to create contract record for loan {loan_id}")
+                                            if transfer_success:
+                                                messages.warning(request, 
+                                                    f'✅ Investment successful! Loan fully funded but contract generation pending.')
+                                            else:
+                                                messages.warning(request, 
+                                                    f'✅ Investment successful! Loan fully funded but fund transfer and contract generation pending.')
+                                    else:
+                                        logger.error(f"PDF generation failed for loan {loan_id}: {pdf_result.get('error')}")
+                                        if transfer_success:
+                                            messages.warning(request, 
+                                                f'✅ Investment successful! Loan fully funded but contract generation failed.')
+                                        else:
+                                            messages.warning(request, 
+                                                f'✅ Investment successful! Loan fully funded but fund transfer and contract generation pending.')
+                                else:
+                                    logger.error(f"Could not get full loan data for contract generation: {loan_id}")
+                                    if transfer_success:
+                                        messages.warning(request, 
+                                            f'✅ Investment successful! Loan fully funded but contract generation failed.')
+                                    else:
+                                        messages.warning(request, 
+                                            f'✅ Investment successful! Loan fully funded but fund transfer and contract generation pending.')
+                                            
+                            except Exception as contract_error:
+                                logger.error(f"Contract generation error for loan {loan_id}: {str(contract_error)}")
+                                if transfer_success:
                                     messages.warning(request, 
-                                        f'✅ Investment successful! Loan fully funded but fund transfer pending.')
-                            else:
-                                messages.success(request, 
-                                    f'🎉 Investment successful! KES {investment_amount:,.2f} invested. Loan fully funded!')
+                                        f'✅ Investment successful! Loan fully funded but contract generation failed.')
+                                else:
+                                    messages.warning(request, 
+                                        f'✅ Investment successful! Loan fully funded but fund transfer and contract generation pending.')
                         else:
                             remaining = Decimal(str(loan['principal_amount'])) - Decimal(str(new_funded_amount))
                             messages.success(request, 
@@ -2433,3 +2515,142 @@ def borrower_documents(request):
         logger.error(f"Borrower documents error: {str(e)}")
         messages.error(request, 'Error loading documents from Supabase.')
         return redirect('borrower_dashboard')
+
+
+@login_required
+def admin_contracts_management(request):
+    """Admin contract management view"""
+    try:
+        # Get current user from Supabase
+        current_user = get_supabase_user(request)
+        if not current_user:
+            messages.error(request, 'User session error. Please login again.')
+            return redirect('login')
+        
+        # Strict admin access control
+        is_admin = (
+            current_user.get('role') == 'admin' or 
+            current_user.get('email') == 'sammyseth260@gmail.com'
+        )
+        
+        if not is_admin:
+            messages.error(request, 'Access denied. Administrators only.')
+            return redirect('home')
+        
+        # Get all contracts from verification service
+        try:
+            from .contract_verification import contract_verification_service
+            contracts = contract_verification_service.get_all_contracts()
+        except Exception as e:
+            logger.error(f"Error getting contracts: {str(e)}")
+            contracts = []
+            messages.warning(request, 'Error loading contracts.')
+        
+        context = {
+            'contracts': contracts,
+            'total_contracts': len(contracts),
+            'active_contracts': len([c for c in contracts if c.get('days_until_due', 0) > 0]),
+            'overdue_contracts': len([c for c in contracts if c.get('days_until_due', 0) < 0]),
+        }
+        
+        return render(request, 'core/admin_contracts_management.html', context)
+        
+    except Exception as e:
+        logger.error(f"Admin contracts management error: {str(e)}")
+        messages.error(request, 'Error loading contracts management.')
+        return redirect('admin_dashboard')
+
+
+@login_required
+def verify_contract(request, contract_id):
+    """Contract verification view accessible via QR code"""
+    try:
+        # Import verification service
+        from .contract_verification import contract_verification_service
+        
+        # Verify contract
+        verification_data = contract_verification_service.verify_contract(contract_id)
+        
+        if not verification_data:
+            context = {
+                'error': 'Contract not found or invalid contract ID.',
+                'contract_id': contract_id
+            }
+            return render(request, 'core/verify_contract.html', context)
+        
+        context = {
+            'verification_data': verification_data,
+            'contract_id': contract_id,
+            'verified': True
+        }
+        
+        return render(request, 'core/verify_contract.html', context)
+        
+    except Exception as e:
+        logger.error(f"Contract verification error: {str(e)}")
+        context = {
+            'error': f'Error verifying contract: {str(e)}',
+            'contract_id': contract_id
+        }
+        return render(request, 'core/verify_contract.html', context)
+
+
+@login_required
+def download_contract(request, loan_id):
+    """Download contract PDF for a specific loan from Supabase Storage"""
+    try:
+        # Get current user from Supabase
+        current_user = get_supabase_user(request)
+        if not current_user:
+            messages.error(request, 'User session error. Please login again.')
+            return redirect('login')
+        
+        # Get loan details from Supabase
+        loan = supabase_service.get_loan_with_details(loan_id)
+        if not loan:
+            messages.error(request, 'Loan not found.')
+            return redirect('home')
+        
+        # Check access permissions
+        user_role = current_user.get('role')
+        borrower_id = loan.get('borrower_id')
+        
+        # Get loan investments to check if user is a lender
+        loan_investments = supabase_service.get_investments_by_loan(loan_id) or []
+        lender_ids = [inv['lender_id'] for inv in loan_investments]
+        
+        # Allow access to borrower, lenders, and admin
+        has_access = (
+            current_user['id'] == borrower_id or  # Borrower
+            current_user['id'] in lender_ids or   # Lender
+            user_role == 'admin' or               # Admin
+            current_user.get('email') == 'sammyseth260@gmail.com'  # Admin email
+        )
+        
+        if not has_access:
+            messages.error(request, 'Access denied. You do not have permission to download this contract.')
+            return redirect('home')
+        
+        # Get contract URL from Supabase
+        try:
+            contract_result = supabase.table('loan_contracts').select('pdf_url').eq('loan_id', loan_id).execute()
+            
+            if contract_result.data and len(contract_result.data) > 0:
+                pdf_url = contract_result.data[0]['pdf_url']
+                
+                # Redirect to the Supabase Storage URL
+                logger.info(f"Redirecting to Supabase Storage URL: {pdf_url}")
+                return redirect(pdf_url)
+            else:
+                messages.error(request, 'Contract PDF not found. It may not have been generated yet.')
+                return redirect('borrower_dashboard' if user_role == 'borrower' else 'marketplace')
+                
+        except Exception as e:
+            logger.error(f"Error getting contract PDF from Supabase: {str(e)}")
+            messages.error(request, 'Error accessing contract PDF.')
+            return redirect('home')
+        
+    except Exception as e:
+        logger.error(f"Download contract error: {str(e)}")
+        messages.error(request, 'Error downloading contract.')
+        return redirect('home')

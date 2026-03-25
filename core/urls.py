@@ -20,6 +20,9 @@ urlpatterns = [
     path('loan/<str:loan_id>/pay/', views.loan_payment, name='loan_payment'),
     path('loan/<str:loan_id>/contract/', views.download_contract, name='download_contract'),
     
+    # Contract verification URLs
+    path('verify-contract/<str:contract_id>/', views.verify_contract, name='verify_contract'),
+    
     # Wallet URLs
     path('wallet/deposit/', views.wallet_deposit, name='wallet_deposit'),
     path('wallet/withdraw/', views.wallet_withdraw, name='wallet_withdraw'),
@@ -40,4 +43,5 @@ urlpatterns = [
     path('admin/commissions/', views.admin_commissions_payouts, name='admin_commissions_payouts'),
     path('admin/payments/', views.admin_payments_management, name='admin_payments_management'),
     path('admin/wallets/', views.admin_wallet_management, name='admin_wallet_management'),
+    path('admin/contracts/', views.admin_contracts_management, name='admin_contracts_management'),
 ]

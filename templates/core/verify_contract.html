@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}Contract Verification{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header text-center">
+                    <h3>📄 Contract Verification</h3>
+                    <p class="mb-0 text-muted">Secure-Lend Kenya Limited</p>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                        <div class="alert alert-danger text-center">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                            <h5>Verification Failed</h5>
+                            <p>{{ error }}</p>
+                            <small class="text-muted">Contract ID: {{ contract_id }}</small>
+                        </div>
+                    {% elif verified and verification_data %}
+                        <div class="alert alert-success text-center mb-4">
+                            <i class="fas fa-check-circle fa-2x mb-3"></i>
+                            <h5>✅ Contract Verified Successfully</h5>
+                            <p class="mb-0">This is a legitimate loan contract issued by Secure-Lend Kenya Limited</p>
+                        </div>
+
+                        <!-- Contract Details -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>📋 Contract Information</h6>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td><strong>Contract ID:</strong></td>
+                                        <td><code>{{ verification_data.contract_id }}</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Loan ID:</strong></td>
+                                        <td><code>{{ verification_data.loan_id }}</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Created Date:</strong></td>
+                                        <td>{{ verification_data.contract_details.created_date }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Verification Time:</strong></td>
+                                        <td>{{ verification_data.contract_details.verification_time }}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>👤 Borrower Information</h6>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td><strong>Name:</strong></td>
+                                        <td>{{ verification_data.borrower.name }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Email:</strong></td>
+                                        <td>{{ verification_data.borrower.email }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>National ID:</strong></td>
+                                        <td>{{ verification_data.borrower.national_id }}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Loan Details -->
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <h6>💰 Loan Details</h6>
+                                <table class="table table-sm">
+                                    <tr>
+                                        <td><strong>Principal Amount:</strong></td>
+                                        <td>KES {{ verification_data.loan_details.principal_amount|floatformat:2 }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Total Repayment:</strong></td>
+                                        <td>KES {{ verification_data.loan_details.total_repayment|floatformat:2 }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Due Date:</strong></td>
+                                        <td>{{ verification_data.loan_details.due_date }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Status:</strong></td>
+                                        <td>
+                                            {% if verification_data.loan_details.is_overdue %}
+                                                <span class="badge bg-danger">Overdue ({{ verification_data.loan_details.days_until_due|add:"-1" }} days)</span>
+                                            {% elif verification_data.loan_details.days_until_due <= 7 %}
+                                                <span class="badge bg-warning">Due in {{ verification_data.loan_details.days_until_due }} days</span>
+                                            {% else %}
+                                                <span class="badge bg-success">Due in {{ verification_data.loan_details.days_until_due }} days</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>🏦 Lender Information</h6>
+                                {% if verification_data.lenders %}
+                                    <div class="list-group">
+                                        {% for lender in verification_data.lenders %}
+                                        <div class="list-group-item">
+                                            <strong>{{ lender.name }}</strong><br>
+                                            <small class="text-muted">{{ lender.email }}</small>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <p class="text-muted">No lender information available</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Collateral Information -->
+                        {% if verification_data.loan_details.collateral %}
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <h6>🔒 Collateral Information</h6>
+                                <div class="alert alert-info">
+                                    <strong>Secured by:</strong> {{ verification_data.loan_details.collateral }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Download Contract -->
+                        <div class="text-center mt-4">
+                            <a href="{{ verification_data.contract_details.pdf_url }}" 
+                               class="btn btn-primary" 
+                               target="_blank">
+                                <i class="fas fa-download"></i> Download Full Contract PDF
+                            </a>
+                        </div>
+
+                        <!-- Legal Notice -->
+                        <div class="alert alert-light mt-4">
+                            <small class="text-muted">
+                                <strong>Legal Notice:</strong> This contract is governed by the laws of Kenya. 
+                                This verification confirms the authenticity of the contract but does not constitute legal advice. 
+                                For legal matters, consult with a qualified attorney.
+                            </small>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning text-center">
+                            <i class="fas fa-question-circle fa-2x mb-3"></i>
+                            <h5>Contract Verification</h5>
+                            <p>Please scan the QR code on your contract or enter the contract ID to verify.</p>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-center">
+                    <small class="text-muted">
+                        🍃 Secure-Lend Kenya Limited | Licensed P2P Lending Platform
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
