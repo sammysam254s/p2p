@@ -239,6 +239,98 @@ class SupabaseService:
         
         return stats
 
+    def process_wallet_deposit(self, user_id, amount, payment_method='mpesa'):
+        """Process a wallet deposit for a user"""
+        try:
+            # Get current user
+            user = self.get_user_by_id(user_id)
+            if not user:
+                return False
+
+            current_balance = float(user.get('wallet_balance', 0))
+            new_balance = current_balance + float(amount)
+
+            # Update user wallet balance
+            update_result = self.supabase.table('users').update({
+                'wallet_balance': new_balance,
+                'updated_at': 'now()'
+            }).eq('id', user_id).execute()
+
+            if update_result.data:
+                # Create wallet transaction record
+                transaction_result = self.supabase.table('wallet_transactions').insert({
+                    'user_id': user_id,
+                    'transaction_type': 'credit',
+                    'amount': float(amount),
+                    'description': f'Wallet deposit via {payment_method}',
+                    'balance_after': new_balance
+                }).execute()
+
+                return transaction_result.data is not None
+
+            return False
+
+        except Exception as e:
+            print(f"Wallet deposit error: {str(e)}")
+            return False
+
+    def process_wallet_withdrawal(self, user_id, amount, description='Withdrawal'):
+        """Process a wallet withdrawal for a user"""
+        try:
+            # Get current user
+            user = self.get_user_by_id(user_id)
+            if not user:
+                return False
+
+            current_balance = float(user.get('wallet_balance', 0))
+
+            if current_balance < float(amount):
+                return False  # Insufficient funds
+
+            new_balance = current_balance - float(amount)
+
+            # Update user wallet balance
+            update_result = self.supabase.table('users').update({
+                'wallet_balance': new_balance,
+                'updated_at': 'now()'
+            }).eq('id', user_id).execute()
+
+            if update_result.data:
+                # Create wallet transaction record
+                transaction_result = self.supabase.table('wallet_transactions').insert({
+                    'user_id': user_id,
+                    'transaction_type': 'debit',
+                    'amount': float(amount),
+                    'description': description,
+                    'balance_after': new_balance
+                }).execute()
+
+                return transaction_result.data is not None
+
+            return False
+
+        except Exception as e:
+            print(f"Wallet withdrawal error: {str(e)}")
+            return False
+
+    def get_wallet_transactions(self, user_id, limit=50):
+        """Get wallet transaction history for a user"""
+        try:
+            result = self.supabase.table('wallet_transactions').select('*').eq('user_id', user_id).order('created_at', desc=True).limit(limit).execute()
+            return result.data
+        except Exception as e:
+            print(f"Get wallet transactions error: {str(e)}")
+            return []
+
+    def get_wallet_balance(self, user_id):
+        """Get current wallet balance for a user"""
+        try:
+            user = self.get_user_by_id(user_id)
+            return float(user.get('wallet_balance', 0)) if user else 0.0
+        except Exception as e:
+            print(f"Get wallet balance error: {str(e)}")
+            return 0.0
+
 
 # Global service instance
 supabase_service = SupabaseService()

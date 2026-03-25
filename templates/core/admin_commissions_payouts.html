@@ -325,9 +325,19 @@ function generatePayoutReport() {
     // You can implement actual report generation here
 }
 
-// Auto-refresh every 5 minutes to check for new commissions
-setTimeout(function() {
-    location.reload();
-}, 300000);
+// Auto-refresh disabled to prevent blinking
+// Users can manually refresh to check for updates
+document.addEventListener('DOMContentLoaded', function() {
+    // Add manual refresh button
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-outline-primary mt-3';
+    refreshBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Data';
+    refreshBtn.onclick = function() { location.reload(); };
+    
+    const lastCard = document.querySelector('.row:last-child .card-body');
+    if (lastCard) {
+        lastCard.appendChild(refreshBtn);
+    }
+});
 </script>
 {% endblock %}

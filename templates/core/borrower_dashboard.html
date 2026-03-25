@@ -77,6 +77,12 @@
                 <span>Wallet Balance</span>
                 <div class="fw-bold text-success">KES {{ wallet_balance|floatformat:2 }}</div>
             </div>
+            
+            <!-- Wallet Deposit -->
+            <button class="list-group-item list-group-item-action text-success" data-bs-toggle="modal" data-bs-target="#walletDepositModal">
+                <i class="fas fa-plus-circle me-3"></i>
+                <span>Deposit Money</span>
+            </button>
         </div>
     </div>
 </div>
@@ -290,6 +296,74 @@
                     </div>
                 {% endif %}
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Wallet Deposit Modal -->
+<div class="modal fade" id="walletDepositModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-wallet me-2"></i>Deposit Money to Wallet
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'wallet_deposit' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Current Balance:</strong> KES {{ wallet_balance|floatformat:2 }}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="depositAmount" class="form-label">
+                            <i class="fas fa-money-bill me-1"></i>Deposit Amount (KES)
+                        </label>
+                        <input type="number" 
+                               class="form-control" 
+                               id="depositAmount"
+                               name="amount" 
+                               min="10" 
+                               max="100000"
+                               step="1" 
+                               placeholder="Enter amount"
+                               required>
+                        <div class="form-text">
+                            Minimum: KES 10 | Maximum: KES 100,000
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="paymentMethod" class="form-label">
+                            <i class="fas fa-credit-card me-1"></i>Payment Method
+                        </label>
+                        <select class="form-select" id="paymentMethod" name="payment_method" required>
+                            <option value="mpesa">M-Pesa</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="card">Debit/Credit Card</option>
+                        </select>
+                    </div>
+                    
+                    <div class="alert alert-success">
+                        <h6><i class="fas fa-shield-alt me-2"></i>Secure Deposit</h6>
+                        <ul class="mb-0 small">
+                            <li>All transactions are encrypted and secure</li>
+                            <li>Funds are available immediately after confirmation</li>
+                            <li>You can use wallet funds for loan investments</li>
+                            <li>No deposit fees charged</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-plus me-1"></i>Deposit Now
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

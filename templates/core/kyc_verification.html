@@ -285,28 +285,23 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<!-- Auto-refresh for under_review status -->
+<!-- Auto-refresh disabled to prevent blinking -->
 {% if kyc.status == 'under_review' %}
 <script>
-// Auto-refresh page every 30 seconds when KYC is under review
-setTimeout(function() {
-    location.reload();
-}, 30000);
-
-// Show countdown timer
-let countdown = 30;
-const countdownElement = document.createElement('div');
-countdownElement.className = 'alert alert-info mt-3';
-countdownElement.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Page will refresh in <span id="countdown">30</span> seconds to check for updates...';
-document.querySelector('.card-body').appendChild(countdownElement);
-
-const timer = setInterval(function() {
-    countdown--;
-    document.getElementById('countdown').textContent = countdown;
-    if (countdown <= 0) {
-        clearInterval(timer);
+// Auto-refresh disabled to prevent page blinking
+// Users can manually refresh to check status updates
+document.addEventListener('DOMContentLoaded', function() {
+    // Add manual refresh button for under review status
+    const refreshBtn = document.createElement('button');
+    refreshBtn.className = 'btn btn-outline-primary mt-3';
+    refreshBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Check Status';
+    refreshBtn.onclick = function() { location.reload(); };
+    
+    const cardBody = document.querySelector('.card-body');
+    if (cardBody) {
+        cardBody.appendChild(refreshBtn);
     }
-}, 1000);
+});
 </script>
 {% endif %}
 

@@ -773,6 +773,7 @@ def agent_panel(request):
             'pending_collaterals': enriched_collaterals,
             'total_pending': total_pending,
             'total_verified_today': total_verified_today,
+            'user': current_user,  # Add current user for wallet balance access
             'is_admin': user_role == 'admin',
         }
         return render(request, 'core/agent_panel.html', context)
@@ -955,6 +956,7 @@ def marketplace(request):
             'total_invested': total_invested,
             'total_loans_available': total_loans_available,
             'total_funding_needed': total_funding_needed,
+            'wallet_balance': float(current_user.get('wallet_balance', 0)),
             'is_admin': user_role == 'admin',
         }
         return render(request, 'core/marketplace.html', context)
@@ -1584,6 +1586,79 @@ def admin_wallet_management(request):
         logger.error(f"Admin wallet management error: {str(e)}")
         messages.error(request, 'Error loading wallet management.')
         return redirect('admin_dashboard')
+@login_required
+def wallet_deposit(request):
+    """Handle wallet deposits for all user types"""
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+
+        if request.method == 'POST':
+            amount = request.POST.get('amount')
+            payment_method = request.POST.get('payment_method', 'mpesa')
+
+            try:
+                amount = float(amount)
+                if amount < 10:
+                    messages.error(request, 'Minimum deposit amount is KES 10.')
+                    return redirect(request.META.get('HTTP_REFERER', 'home'))
+
+                if amount > 100000:
+                    messages.error(request, 'Maximum deposit amount is KES 100,000.')
+                    return redirect(request.META.get('HTTP_REFERER', 'home'))
+
+                # Process deposit (simulate for now)
+                success = supabase_service.process_wallet_deposit(
+                    user_id=current_user['id'],
+                    amount=amount,
+                    payment_method=payment_method
+                )
+
+                if success:
+                    messages.success(request, f'Successfully deposited KES {amount:,.2f} to your wallet!')
+                else:
+                    messages.error(request, 'Deposit failed. Please try again.')
+
+            except (ValueError, TypeError):
+                messages.error(request, 'Invalid deposit amount.')
+            except Exception as e:
+                logger.error(f"Wallet deposit error: {str(e)}")
+                messages.error(request, 'Deposit processing failed. Please try again.')
+
+        # Redirect back to the referring page
+        return redirect(request.META.get('HTTP_REFERER', 'home'))
+
+    except Exception as e:
+        logger.error(f"Wallet deposit view error: {str(e)}")
+        messages.error(request, 'Error processing deposit.')
+        return redirect('home')
+
+@login_required
+def wallet_transactions(request):
+    """View wallet transaction history"""
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+
+        # Get wallet transactions from Supabase
+        transactions = supabase_service.get_wallet_transactions(current_user['id'])
+
+        context = {
+            'transactions': transactions or [],
+            'wallet_balance': float(current_user.get('wallet_balance', 0)),
+        }
+        return render(request, 'core/wallet_transactions.html', context)
+
+    except Exception as e:
+        logger.error(f"Wallet transactions view error: {str(e)}")
+        messages.error(request, 'Error loading transactions.')
+        return redirect('home')
 
 @login_required
 def kyc_verification(request):

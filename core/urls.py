@@ -20,6 +20,10 @@ urlpatterns = [
     path('loan/<str:loan_id>/pay/', views.loan_payment, name='loan_payment'),
     path('loan/<str:loan_id>/contract/', views.download_contract, name='download_contract'),
     
+    # Wallet URLs
+    path('wallet/deposit/', views.wallet_deposit, name='wallet_deposit'),
+    path('wallet/transactions/', views.wallet_transactions, name='wallet_transactions'),
+    
     # Agent URLs
     path('verify-collateral/<str:collateral_id>/', views.verify_collateral, name='verify_collateral'),
     
