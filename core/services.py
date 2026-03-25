@@ -262,7 +262,7 @@ class SupabaseService:
                     'user_id': user_id,
                     'transaction_type': 'credit',
                     'amount': float(amount),
-                    'description': f'Wallet deposit via {payment_method}',
+                    'description': f'SIMULATED DEPOSIT: {payment_method} deposit (Demo Mode)',
                     'balance_after': new_balance
                 }).execute()
 
