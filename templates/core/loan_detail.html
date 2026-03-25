@@ -224,7 +224,7 @@
                     </tr>
                     <tr>
                         <td>Interest ({{ loan.interest_rate }}% × {{ loan.duration_months }} months):</td>
-                        <td class="text-end">KES {{ loan.calculate_monthly_interest|mul:loan.duration_months|floatformat:2 }}</td>
+                        <td class="text-end">KES {{ loan.total_interest|floatformat:2 }}</td>
                     </tr>
                     <tr>
                         <td>Platform Fee (1%):</td>

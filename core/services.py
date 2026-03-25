@@ -195,6 +195,7 @@ class SupabaseService:
         loan['platform_fee'] = float(self.calculator.calculate_platform_fee(loan['principal_amount']))
         loan['insurance_fee'] = float(self.calculator.calculate_insurance_fee(loan['principal_amount']))
         loan['monthly_interest'] = float(self.calculator.calculate_monthly_interest(loan['principal_amount'], loan['interest_rate']))
+        loan['total_interest'] = loan['monthly_interest'] * loan['duration_months']  # Total interest over loan term
         loan['total_repayment'] = float(self.calculator.calculate_total_repayment(loan['principal_amount'], loan['duration_months'], loan['interest_rate']))
         
         # Calculate funding percentage
@@ -202,6 +203,18 @@ class SupabaseService:
             loan['funding_percentage'] = (loan['funded_amount'] / loan['principal_amount']) * 100
         else:
             loan['funding_percentage'] = 0
+        
+        # Add template compatibility fields
+        loan['calculate_platform_fee'] = loan['platform_fee']
+        loan['calculate_insurance_fee'] = loan['insurance_fee']
+        loan['calculate_monthly_interest'] = loan['monthly_interest']
+        loan['calculate_total_repayment'] = loan['total_repayment']
+        loan['get_funding_percentage'] = loan['funding_percentage']
+        
+        # Add loan-to-value ratio
+        if collateral:
+            collateral_value = float(collateral.get('market_value', 1))
+            loan['loan_to_value_ratio'] = (loan['principal_amount'] / collateral_value * 100) if collateral_value > 0 else 0
         
         return loan
     

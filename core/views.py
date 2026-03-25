@@ -3,13 +3,12 @@ from django.contrib.auth import login, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
-from django.db.models import Sum
 from django.utils import timezone
 from django.http import JsonResponse, HttpResponse
 from decimal import Decimal
 import logging
 import json
-from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction, Commission, Payment, KYCVerification
+# Django models completely removed - Supabase ONLY system
 from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm, KYCVerificationForm, CollateralVerificationForm
 from .supabase_client import supabase
 from .services import supabase_service
@@ -536,31 +535,15 @@ def borrower_dashboard(request):
                         messages.error(request, 'Error creating loan record. Please try again.')
                         return redirect('borrower_dashboard')
                     
-                    # Also create in Django for admin interface (secondary) - OPTIONAL
-                    try:
-                        django_collateral = collateral_form.save(commit=False)
-                        django_collateral.user = request.user
-                        django_collateral.estimated_value = django_collateral.market_value  # Copy market_value to estimated_value for Django compatibility
-                        django_collateral.save()
-                        
-                        django_loan = loan_form.save(commit=False)
-                        django_loan.borrower = request.user
-                        django_loan.collateral = django_collateral
-                        django_loan.status = 'pending_collateral'
-                        django_loan.save()
-                        
-                        logger.info(f"Created loan in both Supabase (primary) and Django (secondary) for {request.user.username}")
-                    except Exception as django_error:
-                        logger.warning(f"Django loan creation failed (non-critical): {str(django_error)}")
-                        # Continue - Supabase is primary, Django is optional
+                    # Django completely removed - Supabase ONLY system
                     
                     messages.success(request, 
                         '🎉 Loan application submitted successfully! '
                         'Your loan is now pending collateral verification by a station agent. '
                         'You will be notified once the verification is complete and your loan is listed for funding.')
                     
-                    logger.info(f"Loan created successfully in Supabase for {request.user.username}: "
-                              f"Amount: KES {requested_amount:,.2f}, Collateral: {supabase_collateral['brand_model']}")
+                    logger.info(f"Loan created successfully in Supabase ONLY for {request.user.username}: "
+                              f"Amount: KES {requested_amount:,.2f}, Collateral: {collateral_data['brand_model']}")
                     
                     return redirect('borrower_dashboard')
                         
@@ -722,8 +705,8 @@ def agent_panel(request):
                     'status': 'verified',
                     'verified_by': current_user['id'],
                     'verification_date': timezone.now().isoformat(),
-                    'agent_verified_value': float(verified_value) if verified_value else collateral.get('estimated_value'),
-                    'agent_notes': agent_notes
+                    'market_value': float(verified_value) if verified_value else collateral.get('market_value'),  # Update market_value with verified value
+                    'updated_at': timezone.now().isoformat()
                 }
                 
                 # Update in Supabase
@@ -744,32 +727,8 @@ def agent_panel(request):
                                 loan_updated = True
                                 break
                     
-                    # Also try to update in Django (secondary, non-critical)
-                    try:
-                        from .models import Collateral, Loan
-                        django_collateral = Collateral.objects.filter(
-                            item_type=collateral.get('item_type'),
-                            brand_model=collateral.get('brand_model'),
-                            estimated_value=collateral.get('estimated_value'),
-                            status='pending'
-                        ).first()
-                        
-                        if django_collateral:
-                            django_collateral.status = 'verified'
-                            django_collateral.verification_date = timezone.now()
-                            django_collateral.verified_by = request.user
-                            django_collateral.agent_verified_value = float(verified_value) if verified_value else django_collateral.estimated_value
-                            django_collateral.agent_notes = agent_notes
-                            django_collateral.save()
-                            
-                            # Update associated Django loan
-                            django_loan = Loan.objects.filter(collateral=django_collateral).first()
-                            if django_loan:
-                                django_loan.status = 'listed'
-                                django_loan.save()
-                                
-                    except Exception as django_error:
-                        logger.warning(f"Django update failed (non-critical): {str(django_error)}")
+                    # Also try to update in Django (secondary, non-critical) - REMOVED
+                    # Django is completely removed from the system - Supabase ONLY
                     
                     if loan_updated:
                         user = supabase_service.get_user_by_id(collateral.get('user_id'))
@@ -1124,7 +1083,8 @@ def loan_detail(request, loan_id):
             loan['platform_fee'] = principal_amount * 0.01  # 1%
             loan['insurance_fee'] = principal_amount * 0.01  # 1%
             loan['monthly_interest'] = principal_amount * (interest_rate / 100)
-            loan['total_repayment'] = principal_amount + (loan['monthly_interest'] * duration_months) + loan['platform_fee'] + loan['insurance_fee']
+            loan['total_interest'] = loan['monthly_interest'] * duration_months  # Total interest over loan term
+            loan['total_repayment'] = principal_amount + loan['total_interest'] + loan['platform_fee'] + loan['insurance_fee']
             loan['funding_percentage'] = (funded_amount / principal_amount * 100) if principal_amount > 0 else 0
             
             # Add Django model compatibility methods
@@ -1248,15 +1208,22 @@ def admin_dashboard(request):
             }
             messages.warning(request, 'Some dashboard statistics may not be current.')
         
-        # Get recent activities using Django ORM for speed
+        # Get recent activities from Supabase ONLY
         try:
-            recent_loans = list(Loan.objects.select_related('borrower', 'collateral')
-                              .order_by('-created_at')[:10])
-            recent_investments = list(Investment.objects.select_related('lender', 'loan')
-                                    .order_by('-date')[:10])
-            recent_users = list(CustomUser.objects.order_by('-date_joined')[:10])
+            # Get recent loans from Supabase
+            all_loans = supabase_service.get_all_loans() or []
+            recent_loans = sorted(all_loans, key=lambda x: x.get('created_at', ''), reverse=True)[:10]
+            
+            # Get recent investments from Supabase
+            all_investments = supabase_service.get_all_investments() or []
+            recent_investments = sorted(all_investments, key=lambda x: x.get('created_at', ''), reverse=True)[:10]
+            
+            # Get recent users from Supabase
+            all_users = supabase_service.get_all_users() or []
+            recent_users = sorted(all_users, key=lambda x: x.get('created_at', ''), reverse=True)[:10]
+            
         except Exception as e:
-            logger.error(f"Error getting recent activities: {str(e)}")
+            logger.error(f"Error getting recent activities from Supabase: {str(e)}")
             recent_loans = []
             recent_investments = []
             recent_users = []
@@ -2206,7 +2173,7 @@ def check_username_api(request):
 
 @login_required
 def borrower_loans(request):
-    """Borrower's loans page"""
+    """Borrower's loans page - Supabase ONLY"""
     try:
         # Check if user is borrower or admin
         user_role = getattr(request.user, 'role', 'borrower')
@@ -2214,11 +2181,27 @@ def borrower_loans(request):
             messages.error(request, 'Access denied. This page is for borrowers.')
             return redirect('home')
         
-        # Get borrower's loans
-        loans = Loan.objects.filter(borrower=request.user).select_related('collateral').order_by('-created_at')
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            messages.error(request, 'User not found in system.')
+            return redirect('home')
+        
+        # Get borrower's loans from Supabase ONLY
+        loans = supabase_service.get_loans_by_borrower(current_user['id']) or []
+        
+        # Enrich loans with details
+        enriched_loans = []
+        for loan in loans:
+            try:
+                loan_details = supabase_service.get_loan_with_details(loan['id'])
+                if loan_details:
+                    enriched_loans.append(loan_details)
+            except Exception as e:
+                logger.error(f"Error enriching loan {loan.get('id')}: {str(e)}")
         
         context = {
-            'loans': loans,
+            'loans': enriched_loans,
             'is_admin': user_role == 'admin',
             'user_role': user_role,
         }

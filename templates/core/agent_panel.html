@@ -155,7 +155,7 @@
                                             {% endif %}
                                         </td>
                                         <td>
-                                            <div class="text-primary fw-bold">KES {{ collateral.estimated_value|floatformat:2 }}</div>
+                                            <div class="text-primary fw-bold">KES {{ collateral.market_value|floatformat:2 }}</div>
                                             <small class="text-muted">Max loan: ~70% of value</small>
                                         </td>
                                         <td>
@@ -189,7 +189,7 @@
                                                         <div class="alert alert-info">
                                                             <strong>Borrower:</strong> {{ collateral.user.username }}<br>
                                                             <strong>Item:</strong> {{ collateral.brand_model }} ({{ collateral.item_type }})<br>
-                                                            <strong>Estimated Value:</strong> KES {{ collateral.estimated_value|floatformat:2 }}
+                                                            <strong>Estimated Value:</strong> KES {{ collateral.market_value|floatformat:2 }}
                                                         </div>
                                                         
                                                         <div class="mb-3">
@@ -200,7 +200,7 @@
                                                                    class="form-control" 
                                                                    id="verified_value{{ collateral.id }}"
                                                                    name="verified_value" 
-                                                                   value="{{ collateral.estimated_value }}"
+                                                                   value="{{ collateral.market_value }}"
                                                                    min="1000" 
                                                                    step="100" 
                                                                    required>
@@ -301,25 +301,43 @@
 
 {% block extra_js %}
 <script>
-// Auto-refresh page every 30 seconds to check for new submissions
-setTimeout(function() {
-    location.reload();
-}, 30000);
+// Removed auto-refresh to prevent blinking/flickering issues
+// Auto-refresh page every 30 seconds to check for new submissions - DISABLED
+// setTimeout(function() {
+//     location.reload();
+// }, 30000);
 
 // Add confirmation dialog for verification
 document.addEventListener('DOMContentLoaded', function() {
     const verifyButtons = document.querySelectorAll('button[type="submit"]');
     verifyButtons.forEach(button => {
         button.addEventListener('click', function(e) {
-            const row = this.closest('tr');
-            const borrower = row.querySelector('td:first-child strong').textContent;
-            const item = row.querySelector('td:nth-child(3)').textContent;
+            const form = this.closest('form');
+            const verifiedValueInput = form.querySelector('input[name="verified_value"]');
+            const verifiedValue = parseFloat(verifiedValueInput.value) || 0;
             
-            if (!confirm(`Confirm verification for ${borrower}'s ${item}?\n\nThis action cannot be undone.`)) {
+            if (verifiedValue < 1000) {
+                alert('Verified value must be at least KES 1,000');
+                e.preventDefault();
+                return;
+            }
+            
+            const borrowerName = form.querySelector('.alert strong').textContent.split(':')[1].trim();
+            
+            if (!confirm(`Confirm verification for ${borrowerName}?\n\nVerified Value: KES ${verifiedValue.toLocaleString()}\n\nThis action cannot be undone.`)) {
                 e.preventDefault();
             }
         });
     });
+    
+    // Add manual refresh button functionality
+    const refreshButton = document.querySelector('button[onclick="location.reload()"]');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            location.reload();
+        });
+    }
 });
 </script>
 {% endblock %}
