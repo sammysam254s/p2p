@@ -352,73 +352,119 @@ def borrower_dashboard(request):
             
             if collateral_form.is_valid() and loan_form.is_valid():
                 try:
-                    # Create collateral
-                    collateral = collateral_form.save(commit=False)
-                    collateral.user = request.user
-                    collateral.save()
+                    # Ensure user exists in Supabase first
+                    if not current_user:
+                        current_user = supabase_service.create_user(
+                            username=request.user.username,
+                            email=request.user.email,
+                            password="",  # Password not needed for existing users
+                            role=user_role,
+                            phone_number=getattr(request.user, 'phone_number', ''),
+                            national_id=getattr(request.user, 'national_id', ''),
+                            first_name=request.user.first_name,
+                            last_name=request.user.last_name
+                        )
+                        if not current_user:
+                            messages.error(request, 'Error creating user profile. Please try again.')
+                            return redirect('borrower_dashboard')
+                    
+                    supabase_user_id = current_user.get('id')
+                    if not supabase_user_id:
+                        messages.error(request, 'User profile error. Please contact support.')
+                        return redirect('borrower_dashboard')
+                    
+                    # Create collateral in Supabase FIRST (primary database)
+                    supabase_collateral = supabase_service.create_collateral(
+                        user_id=supabase_user_id,
+                        item_type=collateral_form.cleaned_data['item_type'],
+                        brand_model=collateral_form.cleaned_data['brand_model'],
+                        market_value=float(collateral_form.cleaned_data['estimated_value'])  # Use market_value parameter
+                    )
+                    
+                    if not supabase_collateral:
+                        messages.error(request, 'Error creating collateral record. Please try again.')
+                        return redirect('borrower_dashboard')
                     
                     # Validate loan amount against collateral
-                    max_loan_amount = collateral.calculate_max_loan_amount()
-                    requested_amount = loan_form.cleaned_data['principal_amount']
+                    if supabase_collateral and 'market_value' in supabase_collateral:
+                        # Calculate max loan amount using the 30/50 rule
+                        market_value = float(supabase_collateral['market_value'])
+                        max_loan_amount = market_value * 0.7 * 0.5  # 30% devaluation, then 50% of devalued amount
+                    else:
+                        max_loan_amount = 0
+                    requested_amount = float(loan_form.cleaned_data['principal_amount'])
                     
                     if requested_amount > max_loan_amount:
-                        collateral.delete()
+                        # Delete the collateral we just created
+                        try:
+                            supabase.table('collateral').delete().eq('id', supabase_collateral['id']).execute()
+                        except:
+                            pass
                         messages.error(request, 
                             f'Requested amount (KES {requested_amount:,.2f}) exceeds maximum '
                             f'allowed (KES {max_loan_amount:,.2f}) based on collateral value.')
-                    else:
-                        # Create loan in Django
-                        loan = loan_form.save(commit=False)
-                        loan.borrower = request.user
-                        loan.collateral = collateral
-                        loan.status = 'pending_collateral'  # Set initial status
-                        loan.save()
-                        
-                        # Also create in Supabase for cross-system compatibility
-                        try:
-                            supabase_user_id = current_user.get('id') if current_user else None
-                            if supabase_user_id:
-                                # Create collateral in Supabase
-                                supabase_collateral = supabase_service.create_collateral(
-                                    user_id=supabase_user_id,
-                                    item_type=collateral.item_type,
-                                    brand_model=collateral.brand_model,
-                                    estimated_value=float(collateral.estimated_value),
-                                    description=collateral.description,
-                                    status='pending'
-                                )
-                                
-                                if supabase_collateral:
-                                    # Create loan in Supabase
-                                    supabase_loan = supabase_service.create_loan(
-                                        borrower_id=supabase_user_id,
-                                        collateral_id=supabase_collateral.get('id'),
-                                        principal_amount=float(loan.principal_amount),
-                                        interest_rate=float(loan.interest_rate),
-                                        duration_months=loan.duration_months,
-                                        purpose=loan.purpose,
-                                        status='pending_collateral'
-                                    )
-                                    
-                                    if supabase_loan:
-                                        logger.info(f"Created loan in both Django and Supabase for {request.user.username}")
-                                    else:
-                                        logger.warning(f"Failed to create loan in Supabase for {request.user.username}")
-                                else:
-                                    logger.warning(f"Failed to create collateral in Supabase for {request.user.username}")
-                        except Exception as supabase_error:
-                            logger.error(f"Supabase loan creation error: {str(supabase_error)}")
-                            # Continue - Django loan is created, Supabase is optional
-                        
-                        messages.success(request, 
-                            'Loan application submitted successfully! 🎉 '
-                            'Your loan is now pending collateral verification by a station agent. '
-                            'You will be notified once the verification is complete.')
                         return redirect('borrower_dashboard')
+                    
+                    # Create loan in Supabase FIRST (primary database)
+                    supabase_loan = supabase_service.create_loan(
+                        borrower_id=supabase_user_id,
+                        collateral_id=supabase_collateral['id'],
+                        principal_amount=requested_amount,
+                        interest_rate=float(loan_form.cleaned_data.get('interest_rate', 13.0)),
+                        duration_months=int(loan_form.cleaned_data['duration_months'])
+                    )
+                    
+                    if not supabase_loan:
+                        # Delete the collateral we created
+                        try:
+                            supabase.table('collateral').delete().eq('id', supabase_collateral['id']).execute()
+                        except:
+                            pass
+                        messages.error(request, 'Error creating loan record. Please try again.')
+                        return redirect('borrower_dashboard')
+                    
+                    # Also create in Django for admin interface (secondary)
+                    try:
+                        django_collateral = collateral_form.save(commit=False)
+                        django_collateral.user = request.user
+                        django_collateral.save()
+                        
+                        django_loan = loan_form.save(commit=False)
+                        django_loan.borrower = request.user
+                        django_loan.collateral = django_collateral
+                        django_loan.status = 'pending_collateral'
+                        django_loan.save()
+                        
+                        logger.info(f"Created loan in both Supabase (primary) and Django (secondary) for {request.user.username}")
+                    except Exception as django_error:
+                        logger.warning(f"Django loan creation failed (non-critical): {str(django_error)}")
+                        # Continue - Supabase is primary, Django is optional
+                    
+                    messages.success(request, 
+                        '🎉 Loan application submitted successfully! '
+                        'Your loan is now pending collateral verification by a station agent. '
+                        'You will be notified once the verification is complete and your loan is listed for funding.')
+                    
+                    logger.info(f"Loan created successfully in Supabase for {request.user.username}: "
+                              f"Amount: KES {requested_amount:,.2f}, Collateral: {collateral_data['brand_model']}")
+                    
+                    return redirect('borrower_dashboard')
                         
                 except Exception as e:
                     logger.error(f"Loan application error: {str(e)}")
-                    messages.error(request, 'Error processing loan application. Please try again.')
+                    messages.error(request, f'Error processing loan application: {str(e)}. Please try again.')
+            else:
+                # Form validation errors
+                error_messages = []
+                for field, errors in collateral_form.errors.items():
+                    for error in errors:
+                        error_messages.append(f"Collateral {field}: {error}")
+                for field, errors in loan_form.errors.items():
+                    for error in errors:
+                        error_messages.append(f"Loan {field}: {error}")
+                
+                if error_messages:
+                    messages.error(request, 'Please correct the following errors: ' + '; '.join(error_messages))
         else:
             collateral_form = CollateralForm()
             loan_form = LoanApplicationForm()
@@ -477,41 +523,67 @@ def borrower_dashboard(request):
 
 @login_required
 def agent_panel(request):
-    """Station agent panel for collateral verification - Enhanced to show all pending items"""
+    """Station agent panel for collateral verification - Supabase Primary"""
     try:
+        # Get current user from Supabase (primary database)
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            # Create user in Supabase if not exists
+            try:
+                current_user = supabase_service.create_user(
+                    username=request.user.username,
+                    email=request.user.email,
+                    password="",
+                    role=getattr(request.user, 'role', 'agent'),
+                    phone_number=getattr(request.user, 'phone_number', ''),
+                    national_id=getattr(request.user, 'national_id', ''),
+                    first_name=request.user.first_name,
+                    last_name=request.user.last_name
+                )
+            except Exception as e:
+                logger.error(f"Error creating user in Supabase: {str(e)}")
+                messages.error(request, 'User profile error. Please contact support.')
+                return redirect('home')
+        
+        if not current_user:
+            messages.error(request, 'User not found in system.')
+            return redirect('home')
+        
         # Allow admin to access agent panel
-        user_role = getattr(request.user, 'role', None)
+        user_role = current_user.get('role')
         if user_role not in ['agent', 'admin']:
             messages.error(request, 'Access denied. Station agents only.')
             return redirect('home')
         
-        # Get pending collateral items from Django (primary source)
-        pending_collaterals = Collateral.objects.filter(
-            status='pending'
-        ).select_related('user').order_by('-created_at')
+        # Get pending collateral items from Supabase (primary database)
+        pending_collaterals = supabase_service.get_pending_collaterals() or []
         
-        # Get associated loans for each collateral
+        # Enrich collaterals with user and loan details
         enriched_collaterals = []
         for collateral in pending_collaterals:
             try:
-                # Get the associated loan
-                loan = Loan.objects.filter(collateral=collateral).first()
-                collateral_data = {
-                    'id': collateral.id,
-                    'user': collateral.user,
-                    'item_type': collateral.item_type,
-                    'brand_model': collateral.brand_model,
-                    'estimated_value': collateral.estimated_value,
-                    'description': collateral.description,
-                    'status': collateral.status,
-                    'created_at': collateral.created_at,
-                    'loan': loan,
-                    'loan_amount': loan.principal_amount if loan else 0,
-                    'loan_purpose': loan.purpose if loan else 'N/A'
-                }
-                enriched_collaterals.append(collateral_data)
+                # Get user details
+                user = supabase_service.get_user_by_id(collateral.get('user_id'))
+                if user:
+                    collateral['user'] = user
+                    
+                    # Get associated loan details
+                    all_loans = supabase_service.get_all_loans() or []
+                    associated_loan = None
+                    for loan in all_loans:
+                        if loan.get('collateral_id') == collateral.get('id'):
+                            associated_loan = loan
+                            break
+                    
+                    collateral['loan'] = associated_loan
+                    collateral['loan_amount'] = associated_loan.get('principal_amount', 0) if associated_loan else 0
+                    collateral['loan_purpose'] = associated_loan.get('purpose', 'N/A') if associated_loan else 'N/A'
+                    collateral['loan_duration'] = associated_loan.get('duration_months', 0) if associated_loan else 0
+                    
+                    enriched_collaterals.append(collateral)
+                    
             except Exception as e:
-                logger.error(f"Error enriching collateral {collateral.id}: {str(e)}")
+                logger.error(f"Error enriching collateral {collateral.get('id')}: {str(e)}")
         
         # Handle verification
         if request.method == 'POST':
@@ -520,71 +592,109 @@ def agent_panel(request):
             agent_notes = request.POST.get('agent_notes', '')
             
             try:
-                # Get the collateral from Django
-                collateral = Collateral.objects.get(id=collateral_id, status='pending')
+                # Find the collateral in Supabase
+                collateral = None
+                for c in pending_collaterals:
+                    if str(c.get('id')) == str(collateral_id):
+                        collateral = c
+                        break
                 
-                # Update collateral with verification details
-                collateral.status = 'verified'
-                collateral.verification_date = timezone.now()
-                collateral.verified_by = request.user
-                collateral.agent_verified_value = verified_value if verified_value else collateral.estimated_value
-                collateral.agent_notes = agent_notes
-                collateral.save()
+                if not collateral:
+                    messages.error(request, 'Collateral not found.')
+                    return redirect('agent_panel')
                 
-                # Update associated loan status
-                try:
-                    loan = Loan.objects.get(collateral=collateral)
-                    loan.status = 'listed'  # Make it available for funding
-                    loan.save()
+                # Update collateral status in Supabase (primary database)
+                update_data = {
+                    'status': 'verified',
+                    'verified_by': current_user['id'],
+                    'verification_date': timezone.now().isoformat(),
+                    'agent_verified_value': float(verified_value) if verified_value else collateral.get('estimated_value'),
+                    'agent_notes': agent_notes
+                }
+                
+                # Update in Supabase
+                result = supabase.table('collateral').update(update_data).eq('id', collateral_id).execute()
+                
+                if result.data:
+                    # Find and update associated loan status to 'listed' in Supabase
+                    all_loans = supabase_service.get_all_loans() or []
+                    loan_updated = False
                     
-                    # Generate contract PDF if service is available
+                    for loan in all_loans:
+                        if str(loan.get('collateral_id')) == str(collateral_id):
+                            loan_update_result = supabase.table('loans').update({
+                                'status': 'listed'
+                            }).eq('id', loan['id']).execute()
+                            
+                            if loan_update_result.data:
+                                loan_updated = True
+                                break
+                    
+                    # Also try to update in Django (secondary, non-critical)
                     try:
-                        if PDF_SERVICE_AVAILABLE and pdf_generator:
-                            pdf_generator.save_contract_pdf(loan)
-                    except Exception as pdf_error:
-                        logger.warning(f"PDF generation failed: {str(pdf_error)}")
+                        from .models import Collateral, Loan
+                        django_collateral = Collateral.objects.filter(
+                            item_type=collateral.get('item_type'),
+                            brand_model=collateral.get('brand_model'),
+                            estimated_value=collateral.get('estimated_value'),
+                            status='pending'
+                        ).first()
+                        
+                        if django_collateral:
+                            django_collateral.status = 'verified'
+                            django_collateral.verification_date = timezone.now()
+                            django_collateral.verified_by = request.user
+                            django_collateral.agent_verified_value = float(verified_value) if verified_value else django_collateral.estimated_value
+                            django_collateral.agent_notes = agent_notes
+                            django_collateral.save()
+                            
+                            # Update associated Django loan
+                            django_loan = Loan.objects.filter(collateral=django_collateral).first()
+                            if django_loan:
+                                django_loan.status = 'listed'
+                                django_loan.save()
+                                
+                    except Exception as django_error:
+                        logger.warning(f"Django update failed (non-critical): {str(django_error)}")
                     
-                    # Also update in Supabase if possible
-                    try:
-                        current_user = supabase_service.get_user_by_username(request.user.username)
-                        if current_user:
-                            # Try to find and update in Supabase
-                            supabase_collaterals = supabase_service.get_pending_collaterals() or []
-                            for supabase_collateral in supabase_collaterals:
-                                if (supabase_collateral.get('item_type') == collateral.item_type and
-                                    supabase_collateral.get('estimated_value') == float(collateral.estimated_value)):
-                                    supabase_service.update_collateral_status(
-                                        supabase_collateral['id'], 
-                                        'verified', 
-                                        verified_by=current_user['id']
-                                    )
-                                    break
-                    except Exception as supabase_error:
-                        logger.warning(f"Supabase update failed: {str(supabase_error)}")
-                    
-                    messages.success(request, 
-                        f'✅ Collateral verified successfully! '
-                        f'Loan for {collateral.user.username} is now listed in the marketplace for funding. '
-                        f'Verified value: KES {collateral.agent_verified_value:,.2f}')
-                    
-                except Loan.DoesNotExist:
-                    messages.warning(request, 
-                        f'Collateral verified but no associated loan found for {collateral.user.username}.')
+                    if loan_updated:
+                        user = supabase_service.get_user_by_id(collateral.get('user_id'))
+                        username = user.get('username', 'Unknown') if user else 'Unknown'
+                        verified_amount = float(verified_value) if verified_value else collateral.get('estimated_value', 0)
+                        
+                        messages.success(request, 
+                            f'✅ Collateral verified successfully! '
+                            f'Loan for {username} is now listed in the marketplace for funding. '
+                            f'Verified value: KES {verified_amount:,.2f}')
+                        
+                        logger.info(f"Collateral {collateral_id} verified by {current_user.get('username')} "
+                                  f"for user {username}, value: KES {verified_amount:,.2f}")
+                    else:
+                        messages.warning(request, 'Collateral verified but no associated loan found.')
+                else:
+                    messages.error(request, 'Error verifying collateral in database. Please try again.')
                 
-            except Collateral.DoesNotExist:
-                messages.error(request, 'Collateral not found or already processed.')
             except Exception as e:
                 logger.error(f"Collateral verification error: {str(e)}")
-                messages.error(request, 'Error verifying collateral. Please try again.')
+                messages.error(request, f'Error verifying collateral: {str(e)}. Please try again.')
             
             return redirect('agent_panel')
         
         # Get verification statistics
         total_pending = len(enriched_collaterals)
-        total_verified_today = Collateral.objects.filter(
-            status='verified',
-            verification_date__date=timezone.now().date()
-        ).count()
+        
+        # Get today's verified count from Supabase
+        try:
+            today = timezone.now().date().isoformat()
+            all_collaterals = supabase_service.get_all_collaterals() or []
+            total_verified_today = len([
+                c for c in all_collaterals 
+                if c.get('status') == 'verified' and 
+                c.get('verification_date', '').startswith(today)
+            ])
+        except Exception as e:
+            logger.warning(f"Error getting verification stats: {str(e)}")
+            total_verified_today = 0
         
         context = {
             'pending_collaterals': enriched_collaterals,
@@ -596,41 +706,77 @@ def agent_panel(request):
         
     except Exception as e:
         logger.error(f"Agent panel error: {str(e)}")
-        messages.error(request, 'Error loading agent panel.')
+        messages.error(request, f'Error loading agent panel: {str(e)}')
         return redirect('home')
 
 
 @login_required
 def marketplace(request):
-    """Enhanced lender marketplace showing all available loans"""
+    """Enhanced lender marketplace - Supabase Primary"""
     try:
+        # Get current user from Supabase (primary database)
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            # Create user in Supabase if not exists
+            try:
+                current_user = supabase_service.create_user(
+                    username=request.user.username,
+                    email=request.user.email,
+                    password="",
+                    role=getattr(request.user, 'role', 'lender'),
+                    phone_number=getattr(request.user, 'phone_number', ''),
+                    national_id=getattr(request.user, 'national_id', ''),
+                    first_name=request.user.first_name,
+                    last_name=request.user.last_name
+                )
+            except Exception as e:
+                logger.error(f"Error creating user in Supabase: {str(e)}")
+        
+        if not current_user:
+            messages.error(request, 'User not found in system.')
+            return redirect('home')
+        
         # Allow admin to access marketplace
-        user_role = getattr(request.user, 'role', None)
+        user_role = current_user.get('role')
         if user_role not in ['lender', 'admin']:
             messages.error(request, 'Access denied. Lenders only.')
             return redirect('home')
         
-        # Get loans that need funding from Django (primary source)
-        available_loans = Loan.objects.filter(
-            status='listed'  # Only show verified and listed loans
-        ).select_related('borrower', 'collateral').order_by('-created_at')
+        # Get loans that need funding from Supabase (primary database)
+        listed_loans = supabase_service.get_listed_loans() or []
         
-        # Filter for loans that are actually available for investment
+        # Enrich loans with details and filter for valid investments
         valid_loans = []
-        for loan in available_loans:
-            # Check if loan still needs funding and hasn't expired
-            if not loan.is_expired():
-                remaining_amount = loan.principal_amount - loan.funded_amount
-                if remaining_amount > 0:
-                    # Add additional loan information
-                    loan.remaining_amount = remaining_amount
-                    loan.funding_percentage = (loan.funded_amount / loan.principal_amount) * 100
-                    loan.days_remaining = (loan.created_at + timezone.timedelta(days=7) - timezone.now()).days
-                    valid_loans.append(loan)
-            else:
-                # Auto-expire loans that have passed 7-day window
-                loan.status = 'cancelled'
-                loan.save()
+        for loan in listed_loans:
+            try:
+                # Get loan with full details
+                loan_details = supabase_service.get_loan_with_details(loan['id'])
+                if loan_details:
+                    # Check if loan still needs funding and hasn't expired
+                    remaining_amount = float(loan_details['principal_amount']) - float(loan_details.get('funded_amount', 0))
+                    
+                    if remaining_amount > 0:
+                        # Calculate additional metrics
+                        loan_details['remaining_amount'] = remaining_amount
+                        loan_details['funding_percentage'] = (float(loan_details.get('funded_amount', 0)) / float(loan_details['principal_amount'])) * 100
+                        
+                        # Calculate days remaining (7-day funding window)
+                        from datetime import datetime
+                        created_date = datetime.fromisoformat(loan_details['created_at'].replace('Z', '+00:00'))
+                        days_remaining = 7 - (timezone.now() - created_date).days
+                        loan_details['days_remaining'] = max(0, days_remaining)
+                        
+                        if days_remaining > 0:
+                            valid_loans.append(loan_details)
+                        else:
+                            # Auto-expire loans that have passed 7-day window
+                            try:
+                                supabase.table('loans').update({'status': 'cancelled'}).eq('id', loan['id']).execute()
+                            except Exception as e:
+                                logger.warning(f"Failed to expire loan {loan['id']}: {str(e)}")
+                        
+            except Exception as e:
+                logger.error(f"Error processing loan {loan.get('id')}: {str(e)}")
         
         # Handle investment
         if request.method == 'POST':
@@ -638,10 +784,14 @@ def marketplace(request):
             investment_amount = Decimal(request.POST.get('investment_amount', '0'))
             
             try:
-                loan = Loan.objects.get(id=loan_id, status='listed')
+                # Get loan details from Supabase
+                loan = supabase_service.get_loan_with_details(loan_id)
+                if not loan or loan.get('status') != 'listed':
+                    messages.error(request, 'Loan not found or not available for investment.')
+                    return redirect('marketplace')
                 
                 # Validate investment amount
-                remaining_amount = loan.principal_amount - loan.funded_amount
+                remaining_amount = Decimal(str(loan['principal_amount'])) - Decimal(str(loan.get('funded_amount', 0)))
                 if investment_amount > remaining_amount:
                     messages.error(request, f'Investment amount exceeds remaining funding needed (KES {remaining_amount:,.2f})')
                 elif investment_amount <= 0:
@@ -649,56 +799,82 @@ def marketplace(request):
                 elif investment_amount < 100:
                     messages.error(request, 'Minimum investment amount is KES 100.')
                 else:
-                    # Create investment
-                    investment = Investment.objects.create(
-                        lender=request.user,
-                        loan=loan,
-                        amount_invested=investment_amount,
-                        expected_return=investment_amount * Decimal('0.13')  # 13% return
+                    # Create investment in Supabase
+                    investment_result = supabase_service.create_investment(
+                        lender_id=current_user['id'],
+                        loan_id=loan_id,
+                        amount_invested=float(investment_amount)
                     )
                     
-                    # Update loan funded amount
-                    loan.funded_amount += investment_amount
-                    
-                    # Check if loan is fully funded
-                    if loan.funded_amount >= loan.principal_amount:
-                        loan.status = 'active'
-                        loan.activate_loan()
+                    if investment_result:
+                        # Update loan funded amount
+                        new_funded_amount = float(loan.get('funded_amount', 0)) + float(investment_amount)
                         
-                        # Generate updated contract PDF
-                        try:
-                            if PDF_SERVICE_AVAILABLE and pdf_generator:
-                                pdf_generator.save_contract_pdf(loan)
-                        except Exception as pdf_error:
-                            logger.warning(f"PDF generation failed: {str(pdf_error)}")
+                        update_result = supabase.table('loans').update({
+                            'funded_amount': new_funded_amount
+                        }).eq('id', loan_id).execute()
                         
-                        messages.success(request, 
-                            f'🎉 Loan fully funded! Your investment of KES {investment_amount:,.2f} '
-                            f'has completed the funding for {loan.borrower.username}\'s loan. '
-                            f'The loan is now active and you will receive returns as scheduled.')
+                        if update_result.data:
+                            # Check if loan is fully funded
+                            if new_funded_amount >= float(loan['principal_amount']):
+                                # Mark loan as active
+                                supabase.table('loans').update({
+                                    'status': 'active',
+                                    'activation_date': timezone.now().isoformat()
+                                }).eq('id', loan_id).execute()
+                                
+                                messages.success(request, 
+                                    f'🎉 Loan fully funded! Your investment of KES {investment_amount:,.2f} '
+                                    f'has completed the funding for {loan["borrower"]["username"]}\'s loan. '
+                                    f'The loan is now active and you will receive returns as scheduled.')
+                            else:
+                                remaining = Decimal(str(loan['principal_amount'])) - Decimal(str(new_funded_amount))
+                                messages.success(request, 
+                                    f'✅ Investment successful! You invested KES {investment_amount:,.2f}. '
+                                    f'Loan still needs KES {remaining:,.2f} to be fully funded.')
+                            
+                            # Also create in Django (secondary, non-critical)
+                            try:
+                                from .models import Investment, Loan as DjangoLoan
+                                django_loan = DjangoLoan.objects.filter(
+                                    borrower__username=loan['borrower']['username'],
+                                    principal_amount=loan['principal_amount']
+                                ).first()
+                                
+                                if django_loan:
+                                    Investment.objects.create(
+                                        lender=request.user,
+                                        loan=django_loan,
+                                        amount_invested=investment_amount,
+                                        expected_return=investment_amount * Decimal('0.13')
+                                    )
+                                    
+                                    django_loan.funded_amount += investment_amount
+                                    if django_loan.funded_amount >= django_loan.principal_amount:
+                                        django_loan.status = 'active'
+                                    django_loan.save()
+                                    
+                            except Exception as django_error:
+                                logger.warning(f"Django investment creation failed (non-critical): {str(django_error)}")
+                            
+                        else:
+                            messages.error(request, 'Error updating loan funding. Please try again.')
                     else:
-                        remaining = loan.principal_amount - loan.funded_amount
-                        messages.success(request, 
-                            f'✅ Investment successful! You invested KES {investment_amount:,.2f}. '
-                            f'Loan still needs KES {remaining:,.2f} to be fully funded.')
-                    
-                    loan.save()
+                        messages.error(request, 'Error creating investment. Please try again.')
             
                 return redirect('marketplace')
                 
-            except Loan.DoesNotExist:
-                messages.error(request, 'Loan not found or not available for investment.')
             except Exception as e:
                 logger.error(f"Investment error: {str(e)}")
-                messages.error(request, 'Error processing investment. Please try again.')
+                messages.error(request, f'Error processing investment: {str(e)}. Please try again.')
         
-        # Get lender's investments
-        lender_investments = Investment.objects.filter(lender=request.user).select_related('loan')
-        total_invested = sum(inv.amount_invested for inv in lender_investments)
+        # Get lender's investments from Supabase
+        lender_investments = supabase_service.get_investments_by_lender(current_user['id']) or []
+        total_invested = sum(float(inv.get('amount_invested', 0)) for inv in lender_investments)
         
         # Calculate marketplace statistics
         total_loans_available = len(valid_loans)
-        total_funding_needed = sum(loan.remaining_amount for loan in valid_loans)
+        total_funding_needed = sum(loan.get('remaining_amount', 0) for loan in valid_loans)
         
         context = {
             'listed_loans': valid_loans,
@@ -712,7 +888,7 @@ def marketplace(request):
         
     except Exception as e:
         logger.error(f"Marketplace error: {str(e)}")
-        messages.error(request, 'Error loading marketplace.')
+        messages.error(request, f'Error loading marketplace: {str(e)}')
         return redirect('home')
 
 
