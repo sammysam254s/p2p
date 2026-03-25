@@ -29,9 +29,6 @@
                         <strong>⏳ Processing Your Verification</strong> Your documents are being processed automatically.
                         <small class="d-block mt-1">
                             Expected completion: Within 1-2 minutes. Refresh this page to see updates.
-                            {% if kyc.verification_score > 0 %}
-                                <br>Current AI Score: {{ kyc.verification_score|floatformat:1 }}%
-                            {% endif %}
                         </small>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
@@ -39,15 +36,12 @@
                     <div class="alert alert-danger alert-dismissible fade show">
                         <i class="fas fa-times-circle me-2"></i>
                         <strong>❌ Verification Failed</strong> Please review the requirements and resubmit your documents.
-                        {% if kyc.ai_verification_result.message %}
-                            <small class="d-block mt-1">Issue: {{ kyc.ai_verification_result.message }}</small>
-                        {% endif %}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% else %}
                     <div class="alert alert-warning alert-dismissible fade show">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>⚠️ Verification Required</strong> Complete KYC verification to unlock loan applications and all borrower features.
+                        <strong>⚠️ Verification Required</strong> Complete identity verification to unlock loan applications and all borrower features.
                         <small class="d-block mt-1">This is a mandatory security requirement for all borrowers.</small>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>

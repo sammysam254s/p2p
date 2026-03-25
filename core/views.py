@@ -280,7 +280,7 @@ def borrower_dashboard(request):
                     'email': request.user.email
                 }
         
-        # Check KYC status (skip for admin)
+        # Check KYC status from Supabase (primary database)
         kyc_verified = False
         kyc_status = 'pending'
         kyc_exists = False
@@ -290,55 +290,115 @@ def borrower_dashboard(request):
             kyc_status = 'admin_access'
             kyc_exists = True
         else:
-            # Check KYC from Django model
+            # Get KYC status from Supabase first
             try:
-                kyc = request.user.kyc
-                kyc_verified = kyc.is_verified()
-                kyc_status = kyc.status
-                kyc_exists = True
-            except KYCVerification.DoesNotExist:
-                # Create a pending KYC record for the user
-                try:
-                    kyc = KYCVerification.objects.create(
-                        user=request.user,
-                        full_name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
-                        id_number="",
-                        date_of_birth=timezone.now().date(),
-                        status='pending'
-                    )
-                    kyc_verified = False
-                    kyc_status = 'pending'
-                    kyc_exists = True
-                    logger.info(f"Created KYC record for user {request.user.username}")
-                except Exception as e:
-                    logger.error(f"Error creating KYC record: {str(e)}")
-                    kyc_verified = False
-                    kyc_status = 'pending'
-                    kyc_exists = False
+                if current_user and current_user.get('id'):
+                    # Check if user has KYC record in Supabase
+                    kyc_result = supabase.table('kyc_verifications').select('*').eq('user_id', current_user['id']).execute()
+                    
+                    if kyc_result.data:
+                        kyc_record = kyc_result.data[0]
+                        kyc_status = kyc_record.get('status', 'pending')
+                        kyc_verified = kyc_status == 'verified'
+                        kyc_exists = True
+                        logger.info(f"KYC status from Supabase for {request.user.username}: {kyc_status}")
+                    else:
+                        # No KYC record in Supabase, check Django as fallback
+                        try:
+                            kyc = request.user.kyc
+                            kyc_verified = kyc.is_verified()
+                            kyc_status = kyc.status
+                            kyc_exists = True
+                            logger.info(f"KYC status from Django for {request.user.username}: {kyc_status}")
+                        except KYCVerification.DoesNotExist:
+                            # Create a pending KYC record in Django
+                            try:
+                                kyc = KYCVerification.objects.create(
+                                    user=request.user,
+                                    full_name=f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+                                    id_number="",
+                                    date_of_birth=timezone.now().date(),
+                                    status='pending'
+                                )
+                                kyc_verified = False
+                                kyc_status = 'pending'
+                                kyc_exists = True
+                                logger.info(f"Created KYC record for user {request.user.username}")
+                            except Exception as e:
+                                logger.error(f"Error creating KYC record: {str(e)}")
+                                kyc_verified = False
+                                kyc_status = 'pending'
+                                kyc_exists = False
+                else:
+                    # Fallback to Django if no Supabase user
+                    try:
+                        kyc = request.user.kyc
+                        kyc_verified = kyc.is_verified()
+                        kyc_status = kyc.status
+                        kyc_exists = True
+                    except KYCVerification.DoesNotExist:
+                        kyc_verified = False
+                        kyc_status = 'pending'
+                        kyc_exists = False
+                        
             except Exception as e:
-                logger.warning(f"KYC check error: {str(e)}")
+                logger.error(f"KYC check error: {str(e)}")
                 kyc_verified = False
                 kyc_status = 'pending'
                 kyc_exists = False
         
-        # Get borrower's loans from Django (most reliable)
+        # Get borrower's loans from Supabase (primary database)
         try:
-            django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
+            if current_user and current_user.get('id'):
+                # Get loans from Supabase first
+                supabase_loans = supabase_service.get_loans_by_borrower(current_user['id']) or []
+                
+                # Enrich loans with details
+                enriched_loans = []
+                for loan in supabase_loans:
+                    try:
+                        loan_details = supabase_service.get_loan_with_details(loan['id'])
+                        if loan_details:
+                            enriched_loans.append(loan_details)
+                    except Exception as e:
+                        logger.error(f"Error enriching loan {loan.get('id')}: {str(e)}")
+                
+                loans = enriched_loans
+            else:
+                # Fallback to Django if no Supabase user
+                django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
+                loans = list(django_loans)
         except Exception as e:
             logger.error(f"Error getting loans: {str(e)}")
-            django_loans = []
+            # Fallback to Django
+            try:
+                django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
+                loans = list(django_loans)
+            except Exception as django_error:
+                logger.error(f"Django loans fallback failed: {str(django_error)}")
+                loans = []
         
-        # Calculate totals safely
+        # Calculate totals safely (works with both Supabase and Django loan formats)
         total_borrowed = 0
         total_outstanding = 0
         try:
-            total_borrowed = sum(loan.principal_amount for loan in django_loans)
-            total_outstanding = sum(
-                loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment())
-                for loan in django_loans if loan.status == 'active'
-            )
+            for loan in loans:
+                if isinstance(loan, dict):  # Supabase format
+                    total_borrowed += float(loan.get('principal_amount', 0))
+                    if loan.get('status') == 'active':
+                        # Calculate outstanding for Supabase loans
+                        principal = float(loan.get('principal_amount', 0))
+                        funded = float(loan.get('funded_amount', 0))
+                        # Simple calculation - in production you'd want more sophisticated repayment tracking
+                        total_outstanding += principal
+                else:  # Django format
+                    total_borrowed += float(loan.principal_amount)
+                    if loan.status == 'active':
+                        total_outstanding += float(loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment()))
         except Exception as e:
             logger.error(f"Error calculating totals: {str(e)}")
+            total_borrowed = 0
+            total_outstanding = 0
         
         # Handle loan application (strict KYC enforcement)
         if request.method == 'POST':
@@ -378,7 +438,7 @@ def borrower_dashboard(request):
                         user_id=supabase_user_id,
                         item_type=collateral_form.cleaned_data['item_type'],
                         brand_model=collateral_form.cleaned_data['brand_model'],
-                        market_value=float(collateral_form.cleaned_data['estimated_value'])  # Use market_value parameter
+                        market_value=float(collateral_form.cleaned_data['market_value'])  # Correct field name
                     )
                     
                     if not supabase_collateral:
@@ -427,6 +487,7 @@ def borrower_dashboard(request):
                     try:
                         django_collateral = collateral_form.save(commit=False)
                         django_collateral.user = request.user
+                        django_collateral.estimated_value = django_collateral.market_value  # Copy market_value to estimated_value
                         django_collateral.save()
                         
                         django_loan = loan_form.save(commit=False)
@@ -479,7 +540,7 @@ def borrower_dashboard(request):
         
         # Prepare context with safe defaults
         context = {
-            'loans': django_loans,
+            'loans': loans,
             'total_borrowed': total_borrowed,
             'total_outstanding': total_outstanding,
             'collateral_form': collateral_form,
