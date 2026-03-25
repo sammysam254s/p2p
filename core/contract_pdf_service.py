@@ -170,17 +170,11 @@ class SecureLendContractPDF:
             except Exception as storage_error:
                 logger.error(f"Supabase Storage error: {str(storage_error)}")
                 
-                # Fallback: Create a temporary local file and return a placeholder URL
-                # This ensures the system continues working even if storage fails
-                logger.warning("Falling back to placeholder URL due to storage error")
+                # If Supabase Storage fails, we cannot provide a working URL
+                # Return error instead of placeholder
                 return {
-                    'success': True,
-                    'filepath': f'contracts/{filename}',
-                    'filename': filename,
-                    'contract_id': contract_id,
-                    'url': f'/media/contracts/{filename}',  # Placeholder URL
-                    'storage_path': f'contracts/{filename}',
-                    'storage_error': str(storage_error)
+                    'success': False,
+                    'error': f'Supabase Storage upload failed: {str(storage_error)}'
                 }
             
         except Exception as e:

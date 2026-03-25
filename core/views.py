@@ -2192,59 +2192,6 @@ def loan_payment(request, loan_id):
 
 
 @login_required
-def download_contract(request, loan_id):
-    """Download loan contract PDF - Supabase version"""
-    try:
-        # Get loan from Supabase
-        loan = supabase_service.get_loan_with_details(loan_id)
-        
-        if not loan:
-            messages.error(request, 'Loan not found.')
-            return redirect('home')
-        
-        # Get current user from Supabase
-        current_user = get_supabase_user(request)
-        if not current_user:
-            messages.error(request, 'User session error. Please login again.')
-            return redirect('login')
-        
-        # Check permissions
-        can_download = False
-        user_id = current_user.get('id')
-        user_role = current_user.get('role')
-        
-        if user_id == loan.get('borrower_id'):
-            can_download = True
-        elif user_role == 'admin':
-            can_download = True
-        elif user_role == 'lender':
-            # Check if lender invested in this loan
-            investments = supabase_service.get_investments_by_loan(loan_id)
-            lender_invested = any(inv.get('lender_id') == user_id for inv in (investments or []))
-            can_download = lender_invested
-        
-        if not can_download:
-            messages.error(request, 'You do not have permission to download this contract.')
-            return redirect('home')
-        
-        # Get contract URL from Supabase
-        contract_url = supabase_service.get_loan_contract_url(loan_id)
-        if not contract_url:
-            messages.error(request, 'Contract PDF not available yet.')
-            return redirect('borrower_documents')
-        
-        # For now, return a simple message since PDF generation is complex
-        messages.info(request, f'Contract download feature is being updated. Contract URL: {contract_url}')
-        return redirect('borrower_documents')
-        
-    except Exception as e:
-        logger.error(f"Contract download error: {str(e)}")
-        messages.error(request, 'Error downloading contract.')
-        return redirect('borrower_documents')
-        return redirect('home')
-
-
-@login_required
 def verify_collateral(request, collateral_id):
     """Agent view to verify collateral and update market value - Supabase version"""
     try:
