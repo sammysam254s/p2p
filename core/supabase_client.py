@@ -1,10 +1,19 @@
 import requests
 import json
 import uuid
+import logging
 from datetime import datetime, timezone
 from django.conf import settings
 from decouple import config
 from decimal import Decimal
+from supabase import create_client, Client
+
+logger = logging.getLogger(__name__)
+
+# Initialize Supabase client
+url: str = config("SUPABASE_URL")
+key: str = config("SUPABASE_ANON_KEY")
+supabase: Client = create_client(url, key)
 
 
 class SupabaseTable:
@@ -414,29 +423,99 @@ class SupabaseDocumentService:
         return self.client.update('loans', data, {'id': loan_id})
     
     def get_loans_with_contracts(self, borrower_id):
-        """Get loans that have contract PDFs"""
-        # Get all loans for borrower
-        loans = self.client.select('loans', filters={'borrower_id': borrower_id}, order='created_at.desc')
-        
-        # Filter loans that have contracts
-        loans_with_contracts = []
-        if loans:
-            for loan in loans:
-                if loan.get('contract_pdf') and loan['contract_pdf'].strip():
+        """Get loans that have contract PDFs from loan_contracts table"""
+        try:
+            # Get all active loans for borrower that have contracts
+            contracts_result = supabase.table('loan_contracts').select('*').eq('borrower_id', borrower_id).execute()
+            
+            if not contracts_result.data:
+                return []
+            
+            loans_with_contracts = []
+            
+            for contract in contracts_result.data:
+                # Get loan details
+                loan_result = supabase.table('loans').select('*').eq('id', contract['loan_id']).execute()
+                
+                if loan_result.data:
+                    loan = loan_result.data[0]
+                    
                     # Get collateral details
-                    collateral = self.client.select('collateral', filters={'id': loan['collateral_id']})
-                    if collateral:
-                        loan['collateral'] = collateral[0]
+                    if loan.get('collateral_id'):
+                        collateral_result = supabase.table('collateral').select('*').eq('id', loan['collateral_id']).execute()
+                        if collateral_result.data:
+                            loan['collateral'] = collateral_result.data[0]
+                    
+                    # Add contract information to loan
+                    loan['contract_pdf'] = contract['pdf_url']
+                    loan['contract_id'] = contract['id']
+                    loan['contract_created_at'] = contract['created_at']
+                    
                     loans_with_contracts.append(loan)
-        
-        return loans_with_contracts
+            
+            return loans_with_contracts
+            
+        except Exception as e:
+            logger.error(f"Error getting loans with contracts: {str(e)}")
+            return []
     
     def get_loan_contract_url(self, loan_id):
-        """Get contract PDF URL for a loan"""
-        result = self.client.select('loans', columns='contract_pdf', filters={'id': loan_id})
-        if result and result[0].get('contract_pdf'):
-            return result[0]['contract_pdf']
-        return None
+        """Get contract PDF URL for a loan from loan_contracts table"""
+        try:
+            result = supabase.table('loan_contracts').select('pdf_url').eq('loan_id', loan_id).execute()
+            if result.data and len(result.data) > 0:
+                return result.data[0]['pdf_url']
+            return None
+        except Exception as e:
+            logger.error(f"Error getting loan contract URL: {str(e)}")
+            return None
+    
+    def get_lender_investments_with_contracts(self, lender_id):
+        """Get lender's investments that have contracts"""
+        try:
+            # Get all investments for lender
+            investments_result = supabase.table('investments').select('*').eq('lender_id', lender_id).execute()
+            
+            if not investments_result.data:
+                return []
+            
+            investments_with_contracts = []
+            
+            for investment in investments_result.data:
+                # Check if loan has a contract
+                contract_result = supabase.table('loan_contracts').select('*').eq('loan_id', investment['loan_id']).execute()
+                
+                if contract_result.data:
+                    contract = contract_result.data[0]
+                    
+                    # Get loan details
+                    loan_result = supabase.table('loans').select('*').eq('id', investment['loan_id']).execute()
+                    
+                    if loan_result.data:
+                        loan = loan_result.data[0]
+                        
+                        # Get collateral details
+                        if loan.get('collateral_id'):
+                            collateral_result = supabase.table('collateral').select('*').eq('id', loan['collateral_id']).execute()
+                            if collateral_result.data:
+                                loan['collateral'] = collateral_result.data[0]
+                        
+                        # Add investment and contract information
+                        investment_data = {
+                            'investment': investment,
+                            'loan': loan,
+                            'contract': contract,
+                            'contract_pdf_url': contract['pdf_url'],
+                            'contract_id': contract['id']
+                        }
+                        
+                        investments_with_contracts.append(investment_data)
+            
+            return investments_with_contracts
+            
+        except Exception as e:
+            logger.error(f"Error getting lender investments with contracts: {str(e)}")
+            return []
 
 
 class SupabaseInvestmentService:

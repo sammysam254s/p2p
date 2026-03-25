@@ -1050,6 +1050,9 @@ def marketplace(request):
         lender_investments = supabase_service.get_investments_by_lender(current_user['id']) or []
         total_invested = sum(float(inv.get('amount_invested', 0)) for inv in lender_investments)
         
+        # Get lender's investments with contracts
+        lender_investments_with_contracts = supabase_service.get_lender_investments_with_contracts(current_user['id']) or []
+        
         # Calculate marketplace statistics
         total_loans_available = len(valid_loans)
         total_funding_needed = sum(loan.get('remaining_amount', 0) for loan in valid_loans)
@@ -1066,6 +1069,7 @@ def marketplace(request):
         context = {
             'listed_loans': valid_loans,
             'lender_investments': lender_investments,
+            'lender_investments_with_contracts': lender_investments_with_contracts,
             'total_invested': total_invested,
             'total_loans_available': total_loans_available,
             'total_funding_needed': total_funding_needed,

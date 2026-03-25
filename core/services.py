@@ -390,6 +390,10 @@ class SupabaseService:
     def get_loan_contract_url(self, loan_id):
         """Get loan contract PDF URL"""
         return self.document_service.get_loan_contract_url(loan_id)
+    
+    def get_lender_investments_with_contracts(self, lender_id):
+        """Get lender's investments with contracts"""
+        return self.document_service.get_lender_investments_with_contracts(lender_id)
 
 
 # Global service instance

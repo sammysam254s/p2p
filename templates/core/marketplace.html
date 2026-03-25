@@ -274,6 +274,70 @@
     </div>
 </div>
 
+<!-- My Investments with Contracts -->
+{% if lender_investments_with_contracts %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-file-contract me-2"></i>My Investment Contracts</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for investment_data in lender_investments_with_contracts %}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card border-success">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center mb-3">
+                                    <i class="fas fa-file-pdf fa-2x text-danger me-3"></i>
+                                    <div>
+                                        <h6 class="mb-1">Loan #{{ investment_data.loan.id }}</h6>
+                                        <small class="text-muted">{{ investment_data.loan.collateral.brand_model }}</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <div class="text-center">
+                                                <div class="fw-bold text-success">KES {{ investment_data.investment.amount_invested|floatformat:2 }}</div>
+                                                <small class="text-muted">My Investment</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="text-center">
+                                                <div class="fw-bold text-primary">KES {{ investment_data.loan.principal_amount|floatformat:2 }}</div>
+                                                <small class="text-muted">Total Loan</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="badge bg-success w-100">
+                                        <i class="fas fa-check-circle me-1"></i>Loan Active - Contract Available
+                                    </div>
+                                </div>
+                                
+                                <div class="text-center">
+                                    <a href="{% url 'download_contract' investment_data.loan.id %}" class="btn btn-danger btn-sm">
+                                        <i class="fas fa-download me-1"></i>Download Contract
+                                    </a>
+                                    <a href="{% url 'verify_contract' investment_data.contract_id %}" class="btn btn-outline-primary btn-sm mt-1">
+                                        <i class="fas fa-qrcode me-1"></i>Verify Contract
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Insufficient Funds Modal -->
 <div class="modal fade" id="insufficientFundsModal" tabindex="-1">
     <div class="modal-dialog">
