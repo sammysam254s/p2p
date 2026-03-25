@@ -53,7 +53,7 @@ def get_supabase_user(request):
     
     # Fallback to username if email lookup fails
     if not current_user and hasattr(request.user, 'username') and request.user.username:
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if current_user:
             logger.info(f"Found Supabase user by username: {request.user.username}")
     
@@ -422,36 +422,25 @@ def borrower_dashboard(request):
                 
                 loans = enriched_loans
             else:
-                # Fallback to Django if no Supabase user
-                django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
-                loans = list(django_loans)
-        except Exception as e:
-            logger.error(f"Error getting loans: {str(e)}")
-            # Fallback to Django
-            try:
-                django_loans = Loan.objects.filter(borrower=request.user).order_by('-created_at')
-                loans = list(django_loans)
-            except Exception as django_error:
-                logger.error(f"Django loans fallback failed: {str(django_error)}")
+                # No Supabase user found - return empty loans
+                logger.warning(f"No Supabase user found for {request.user.username}")
                 loans = []
+        except Exception as e:
+            logger.error(f"Error getting loans from Supabase: {str(e)}")
+            loans = []
         
-        # Calculate totals safely (works with both Supabase and Django loan formats)
+        # Calculate totals safely (Supabase format only)
         total_borrowed = 0
         total_outstanding = 0
         try:
             for loan in loans:
-                if isinstance(loan, dict):  # Supabase format
-                    total_borrowed += float(loan.get('principal_amount', 0))
-                    if loan.get('status') == 'active':
-                        # Calculate outstanding for Supabase loans
-                        principal = float(loan.get('principal_amount', 0))
-                        funded = float(loan.get('funded_amount', 0))
-                        # Simple calculation - in production you'd want more sophisticated repayment tracking
-                        total_outstanding += principal
-                else:  # Django format
-                    total_borrowed += float(loan.principal_amount)
-                    if loan.status == 'active':
-                        total_outstanding += float(loan.calculate_total_repayment() - (loan.payments_made * loan.calculate_monthly_payment()))
+                # All loans are now Supabase format (dict)
+                total_borrowed += float(loan.get('principal_amount', 0))
+                if loan.get('status') == 'active':
+                    # Calculate outstanding for Supabase loans
+                    principal = float(loan.get('principal_amount', 0))
+                    # Simple calculation - in production you'd want more sophisticated repayment tracking
+                    total_outstanding += principal
         except Exception as e:
             logger.error(f"Error calculating totals: {str(e)}")
             total_borrowed = 0
@@ -644,7 +633,7 @@ def agent_panel(request):
     """Station agent panel for collateral verification - Supabase Primary"""
     try:
         # Get current user from Supabase (primary database)
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             # Create user in Supabase if not exists
             try:
@@ -857,111 +846,123 @@ def marketplace(request):
             except Exception as e:
                 logger.error(f"Error processing loan {loan.get('id')}: {str(e)}")
         
-        # Handle investment
+        # Handle investment (OPTIMIZED for speed)
         if request.method == 'POST':
             loan_id = request.POST.get('loan_id')
             investment_amount = Decimal(request.POST.get('investment_amount', '0'))
             
             try:
-                # Get loan details from Supabase
-                loan = supabase_service.get_loan_with_details(loan_id)
-                if not loan or loan.get('status') != 'listed':
-                    messages.error(request, 'Loan not found or not available for investment.')
+                # FAST VALIDATION - Get loan details from Supabase with minimal data
+                loan_result = supabase.table('loans').select('id,borrower_id,principal_amount,funded_amount,status').eq('id', loan_id).execute()
+                
+                if not loan_result.data:
+                    messages.error(request, 'Loan not found.')
                     return redirect('marketplace')
                 
-                # Validate investment amount
+                loan = loan_result.data[0]
+                
+                if loan.get('status') != 'listed':
+                    messages.error(request, 'Loan not available for investment.')
+                    return redirect('marketplace')
+                
+                # FAST VALIDATION - Check amounts
                 remaining_amount = Decimal(str(loan['principal_amount'])) - Decimal(str(loan.get('funded_amount', 0)))
                 wallet_balance = Decimal(str(current_user.get('wallet_balance', 0)))
                 
                 if investment_amount > wallet_balance:
-                    messages.error(request, f'Insufficient wallet balance. You have KES {wallet_balance:,.2f} but need KES {investment_amount:,.2f}. Please deposit funds to your wallet first.')
+                    messages.error(request, f'Insufficient wallet balance. You have KES {wallet_balance:,.2f} but need KES {investment_amount:,.2f}.')
                     return redirect('marketplace')
                 elif investment_amount > remaining_amount:
                     messages.error(request, f'Investment amount exceeds remaining funding needed (KES {remaining_amount:,.2f})')
+                    return redirect('marketplace')
                 elif investment_amount <= 0:
                     messages.error(request, 'Investment amount must be greater than zero.')
+                    return redirect('marketplace')
                 elif investment_amount < 100:
                     messages.error(request, 'Minimum investment amount is KES 100.')
+                    return redirect('marketplace')
+                
+                # FAST PROCESSING - Deduct from wallet first
+                withdrawal_success = supabase_service.process_wallet_withdrawal(
+                    user_id=current_user['id'],
+                    amount=float(investment_amount),
+                    description=f'Investment in loan #{loan_id}'
+                )
+                
+                if not withdrawal_success:
+                    messages.error(request, 'Failed to deduct investment amount from wallet. Please try again.')
+                    return redirect('marketplace')
+                
+                # FAST PROCESSING - Create investment in Supabase
+                investment_result = supabase_service.create_investment(
+                    lender_id=current_user['id'],
+                    loan_id=loan_id,
+                    amount_invested=float(investment_amount)
+                )
+                
+                if investment_result:
+                    # FAST UPDATE - Update loan funded amount
+                    new_funded_amount = float(loan.get('funded_amount', 0)) + float(investment_amount)
+                    
+                    update_result = supabase.table('loans').update({
+                        'funded_amount': new_funded_amount
+                    }).eq('id', loan_id).execute()
+                    
+                    if update_result.data:
+                        # Check if loan is fully funded
+                        if new_funded_amount >= float(loan['principal_amount']):
+                            # Mark loan as active and transfer funds to borrower
+                            supabase.table('loans').update({
+                                'status': 'active',
+                                'activation_date': timezone.now().isoformat()
+                            }).eq('id', loan_id).execute()
+                            
+                            # TRANSFER FUNDS TO BORROWER'S WALLET
+                            borrower_id = loan.get('borrower_id')
+                            if borrower_id:
+                                transfer_success = supabase_service.process_wallet_deposit(
+                                    user_id=borrower_id,
+                                    amount=float(loan['principal_amount']),
+                                    payment_method='loan_funding'
+                                )
+                                
+                                if transfer_success:
+                                    logger.info(f"FAST: Transferred KES {loan['principal_amount']} to borrower {borrower_id}")
+                                    messages.success(request, 
+                                        f'🎉 Investment successful! KES {investment_amount:,.2f} invested. '
+                                        f'Loan fully funded - KES {loan["principal_amount"]:,.2f} transferred to borrower.')
+                                else:
+                                    logger.error(f"Failed to transfer funds to borrower {borrower_id}")
+                                    messages.warning(request, 
+                                        f'✅ Investment successful! Loan fully funded but fund transfer pending.')
+                            else:
+                                messages.success(request, 
+                                    f'🎉 Investment successful! KES {investment_amount:,.2f} invested. Loan fully funded!')
+                        else:
+                            remaining = Decimal(str(loan['principal_amount'])) - Decimal(str(new_funded_amount))
+                            messages.success(request, 
+                                f'✅ Investment successful! KES {investment_amount:,.2f} invested. '
+                                f'KES {remaining:,.2f} still needed.')
+                        
+                        logger.info(f"FAST: Investment KES {investment_amount:,.2f} in loan {loan_id}")
+                        
+                    else:
+                        messages.error(request, 'Error updating loan funding. Please try again.')
                 else:
-                    # Deduct from wallet balance first
-                    withdrawal_success = supabase_service.process_wallet_withdrawal(
+                    # Refund the wallet if investment creation failed
+                    supabase_service.process_wallet_deposit(
                         user_id=current_user['id'],
                         amount=float(investment_amount),
-                        description=f'Investment in loan #{loan_id}'
+                        payment_method='investment_refund'
                     )
-                    
-                    if not withdrawal_success:
-                        messages.error(request, 'Failed to deduct investment amount from wallet. Please try again.')
-                        return redirect('marketplace')
-                    
-                    # Create investment in Supabase
-                    investment_result = supabase_service.create_investment(
-                        lender_id=current_user['id'],
-                        loan_id=loan_id,
-                        amount_invested=float(investment_amount)
-                    )
-                    
-                    if investment_result:
-                        # Update loan funded amount
-                        new_funded_amount = float(loan.get('funded_amount', 0)) + float(investment_amount)
-                        
-                        update_result = supabase.table('loans').update({
-                            'funded_amount': new_funded_amount
-                        }).eq('id', loan_id).execute()
-                        
-                        if update_result.data:
-                            # Check if loan is fully funded
-                            if new_funded_amount >= float(loan['principal_amount']):
-                                # Mark loan as active
-                                supabase.table('loans').update({
-                                    'status': 'active',
-                                    'activation_date': timezone.now().isoformat()
-                                }).eq('id', loan_id).execute()
-                                
-                                messages.success(request, 
-                                    f'🎉 Loan fully funded! Your investment of KES {investment_amount:,.2f} '
-                                    f'has completed the funding for {loan["borrower"]["username"]}\'s loan. '
-                                    f'The loan is now active and you will receive returns as scheduled.')
-                            else:
-                                remaining = Decimal(str(loan['principal_amount'])) - Decimal(str(new_funded_amount))
-                                messages.success(request, 
-                                    f'✅ Investment successful! You invested KES {investment_amount:,.2f}. '
-                                    f'Loan still needs KES {remaining:,.2f} to be fully funded.')
-                            
-                            # Also create in Django (secondary, non-critical)
-                            try:
-                                from .models import Investment, Loan as DjangoLoan
-                                django_loan = DjangoLoan.objects.filter(
-                                    borrower__username=loan['borrower']['username'],
-                                    principal_amount=loan['principal_amount']
-                                ).first()
-                                
-                                if django_loan:
-                                    Investment.objects.create(
-                                        lender=request.user,
-                                        loan=django_loan,
-                                        amount_invested=investment_amount,
-                                        expected_return=investment_amount * Decimal('0.13')
-                                    )
-                                    
-                                    django_loan.funded_amount += investment_amount
-                                    if django_loan.funded_amount >= django_loan.principal_amount:
-                                        django_loan.status = 'active'
-                                    django_loan.save()
-                                    
-                            except Exception as django_error:
-                                logger.warning(f"Django investment creation failed (non-critical): {str(django_error)}")
-                            
-                        else:
-                            messages.error(request, 'Error updating loan funding. Please try again.')
-                    else:
-                        messages.error(request, 'Error creating investment. Please try again.')
+                    messages.error(request, 'Error creating investment. Wallet refunded. Please try again.')
             
                 return redirect('marketplace')
                 
             except Exception as e:
-                logger.error(f"Investment error: {str(e)}")
-                messages.error(request, f'Error processing investment: {str(e)}. Please try again.')
+                logger.error(f"FAST Investment error: {str(e)}")
+                messages.error(request, f'Investment processing error. Please try again.')
+                return redirect('marketplace')
         
         # Get lender's investments from Supabase
         lender_investments = supabase_service.get_investments_by_lender(current_user['id']) or []
@@ -1010,7 +1011,7 @@ def loan_detail(request, loan_id):
             return redirect('admin_dashboard' if hasattr(request.user, 'role') and request.user.role == 'admin' else 'home')
         
         # Get current user from Supabase first
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             logger.error(f"User {request.user.username} not found in Supabase")
             messages.error(request, 'User session error. Please login again.')
@@ -1212,7 +1213,7 @@ def admin_dashboard(request):
     """Fast admin dashboard without complex caching"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User session error. Please login again.')
             return redirect('login')
@@ -1290,7 +1291,7 @@ def admin_borrower_view(request):
     """Admin view of borrower dashboard"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('home')
@@ -1330,7 +1331,7 @@ def admin_lender_view(request):
     """Admin view of lender marketplace"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('admin_dashboard')
@@ -1373,7 +1374,7 @@ def admin_agent_view(request):
     """Admin view of agent panel"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('admin_dashboard')
@@ -1421,7 +1422,7 @@ def admin_users_management(request):
     """Admin view to manage all users"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('home')
@@ -1519,7 +1520,7 @@ def admin_commissions_payouts(request):
     """Admin view to manage agent commissions and payouts"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('admin_dashboard')
@@ -1547,7 +1548,7 @@ def admin_payments_management(request):
     """Admin view to manage loan payments and next payment tracking"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('admin_dashboard')
@@ -1574,7 +1575,7 @@ def admin_wallet_management(request):
     """Admin view to manage user wallets"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or (current_user.get('role') != 'admin' and current_user.get('email') != 'sammyseth260@gmail.com'):
             messages.error(request, 'Access denied. Administrators only.')
             return redirect('admin_dashboard')
@@ -1621,7 +1622,7 @@ def wallet_deposit(request):
     """Handle wallet deposits for all user types"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User not found.')
             return redirect('home')
@@ -1685,7 +1686,7 @@ def wallet_transactions(request):
     """View wallet transaction history"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User not found.')
             return redirect('home')
@@ -1708,7 +1709,7 @@ def wallet_withdraw(request):
     """Handle wallet withdrawals for all user types"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User not found.')
             return redirect('home')
@@ -2045,7 +2046,7 @@ def loan_payment(request, loan_id):
             return redirect('borrower_dashboard')
         
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or current_user.get('id') != loan.get('borrower_id'):
             messages.error(request, 'Access denied. This is not your loan.')
             return redirect('borrower_dashboard')
@@ -2162,7 +2163,7 @@ def verify_collateral(request, collateral_id):
     """Agent view to verify collateral and update market value - Supabase version"""
     try:
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user or current_user.get('role') not in ['agent', 'admin']:
             messages.error(request, 'Access denied. Agents only.')
             return redirect('home')
@@ -2230,16 +2231,7 @@ def verify_collateral(request, collateral_id):
                             django_collateral.verification_date = timezone.now()
                             django_collateral.verified_by = request.user
                             django_collateral.agent_verified_value = float(verified_value)
-                            django_collateral.agent_notes = agent_notes
-                            django_collateral.save()
-                            
-                            # Update associated Django loan
-                            try:
-                                django_loan = Loan.objects.get(collateral=django_collateral)
-                                django_loan.status = 'listed'
-                                django_loan.save()
-                            except Loan.DoesNotExist:
-                                pass
+                            logger.info(f"Collateral {collateral_id} verified successfully in Supabase")
                     except Exception as django_error:
                         logger.warning(f"Django collateral update failed (non-critical): {str(django_error)}")
                     
@@ -2350,7 +2342,7 @@ def borrower_loans(request):
             return redirect('home')
         
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User not found in system.')
             return redirect('home')

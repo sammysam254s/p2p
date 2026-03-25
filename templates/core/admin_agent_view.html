@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin - Agent Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Include Mobile Menu -->
+    {% include 'core/admin_mobile_menu.html' %}
+    
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="text-warning mb-1">
+                        <i class="fas fa-shield-alt me-2"></i>Agent Management
+                    </h2>
+                    <p class="text-muted mb-0">Manage station agents and collateral verification</p>
+                </div>
+                <div class="d-none d-lg-block">
+                    <span class="badge bg-warning text-dark fs-6">Admin View</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Total Agents</h6>
+                            <h3 class="mb-0">{{ agents|length }}</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-users fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Pending Verifications</h6>
+                            <h3 class="mb-0">{{ pending_collaterals|length }}</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-clock fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Total Collaterals</h6>
+                            <h3 class="mb-0">{{ all_collaterals|length }}</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-gem fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">Verified Today</h6>
+                            <h3 class="mb-0">
+                                {% with verified_today=all_collaterals|length %}
+                                    {{ verified_today|default:0 }}
+                                {% endwith %}
+                            </h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Collateral Verifications -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">
+                        <i class="fas fa-clock me-2"></i>Pending Collateral Verifications
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if pending_collaterals %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Borrower</th>
+                                        <th>Item Type</th>
+                                        <th>Estimated Value</th>
+                                        <th>Description</th>
+                                        <th>Submitted</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for collateral in pending_collaterals %}
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="avatar-sm bg-primary rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                    <i class="fas fa-user text-white"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="fw-bold">{{ collateral.user.username|default:"Unknown" }}</div>
+                                                    <small class="text-muted">{{ collateral.user.email|default:"No email" }}</small>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-info">{{ collateral.item_type|default:"Unknown" }}</span>
+                                        </td>
+                                        <td>
+                                            <strong class="text-success">KES {{ collateral.estimated_value|floatformat:2|default:"0.00" }}</strong>
+                                        </td>
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 200px;" title="{{ collateral.description|default:'No description' }}">
+                                                {{ collateral.description|default:"No description"|truncatechars:50 }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ collateral.created_at|date:"M d, Y" }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-warning">{{ collateral.status|title }}</span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                            <h5 class="text-muted">No Pending Verifications</h5>
+                            <p class="text-muted">All collaterals have been processed.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registered Agents -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-users me-2"></i>Registered Agents
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if agents %}
+                        <div class="row">
+                            {% for agent in agents %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="card border">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="avatar-md bg-info rounded-circle d-flex align-items-center justify-content-center me-3">
+                                                <i class="fas fa-shield-alt text-white"></i>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">{{ agent.username }}</h6>
+                                                <small class="text-muted">{{ agent.email }}</small>
+                                            </div>
+                                        </div>
+                                        <div class="row text-center">
+                                            <div class="col-6">
+                                                <div class="border-end">
+                                                    <h6 class="mb-0 text-success">{{ agent.verifications_count|default:0 }}</h6>
+                                                    <small class="text-muted">Verified</small>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <h6 class="mb-0 text-primary">{{ agent.commission_earned|default:0|floatformat:2 }}</h6>
+                                                <small class="text-muted">Commission</small>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2">
+                                            <span class="badge bg-success">Active</span>
+                                            <small class="text-muted ms-2">Joined {{ agent.created_at|date:"M Y" }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-user-plus fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No Agents Registered</h5>
+                            <p class="text-muted">No station agents have been registered yet.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Collaterals History -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history me-2"></i>All Collaterals History
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if all_collaterals %}
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Borrower</th>
+                                        <th>Item</th>
+                                        <th>Value</th>
+                                        <th>Status</th>
+                                        <th>Verified By</th>
+                                        <th>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for collateral in all_collaterals|slice:":20" %}
+                                    <tr>
+                                        <td>{{ collateral.user.username|default:"Unknown" }}</td>
+                                        <td>{{ collateral.item_type|default:"Unknown" }}</td>
+                                        <td>KES {{ collateral.estimated_value|floatformat:2|default:"0.00" }}</td>
+                                        <td>
+                                            {% if collateral.status == 'verified' %}
+                                                <span class="badge bg-success">Verified</span>
+                                            {% elif collateral.status == 'pending' %}
+                                                <span class="badge bg-warning">Pending</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ collateral.status|title }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ collateral.verified_by|default:"N/A" }}</td>
+                                        <td>{{ collateral.created_at|date:"M d, Y" }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if all_collaterals|length > 20 %}
+                            <div class="text-center mt-3">
+                                <small class="text-muted">Showing latest 20 of {{ all_collaterals|length }} collaterals</small>
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-gem fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No Collaterals</h5>
+                            <p class="text-muted">No collaterals have been submitted yet.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -261,13 +261,20 @@ class SupabaseService:
             }).eq('id', user_id).execute()
 
             if update_result.data:
-                # Create wallet transaction record
+                # Create wallet transaction record with appropriate description
                 try:
+                    if payment_method == 'loan_funding':
+                        description = f'LOAN FUNDING: Received KES {amount:,.2f} from fully funded loan'
+                    elif payment_method == 'investment_refund':
+                        description = f'INVESTMENT REFUND: KES {amount:,.2f} refunded due to processing error'
+                    else:
+                        description = f'SIMULATED DEPOSIT: {payment_method} deposit (Demo Mode)'
+                    
                     transaction_result = self.supabase.table('wallet_transactions').insert({
                         'user_id': user_id,
                         'transaction_type': 'credit',
                         'amount': float(amount),
-                        'description': f'SIMULATED DEPOSIT: {payment_method} deposit (Demo Mode)',
+                        'description': description,
                         'balance_after': new_balance
                     }).execute()
                     

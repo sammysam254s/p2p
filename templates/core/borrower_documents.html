@@ -91,10 +91,34 @@
                         <div class="d-flex align-items-center">
                             <i class="fas fa-calendar fa-2x text-info me-3"></i>
                             <div>
-                                <h6 class="mb-1">Date of Birth</h6>
-                                <p class="mb-0 text-muted">{{ kyc_documents.date_of_birth|date:"F d, Y" }}</p>
+                                <h6 class="mb-1">Verification Status</h6>
+                                {% if kyc_documents.status == 'verified' %}
+                                    <span class="badge bg-success fs-6">✅ Verified</span>
+                                    <p class="mb-0 text-muted small">Verified on {{ kyc_documents.verified_at|date:"M d, Y" }}</p>
+                                {% elif kyc_documents.status == 'under_review' %}
+                                    <span class="badge bg-warning fs-6">⏳ Under Review</span>
+                                    <p class="mb-0 text-muted small">Submitted on {{ kyc_documents.created_at|date:"M d, Y" }}</p>
+                                {% elif kyc_documents.status == 'rejected' %}
+                                    <span class="badge bg-danger fs-6">❌ Rejected</span>
+                                    <p class="mb-0 text-muted small">Please resubmit documents</p>
+                                {% else %}
+                                    <span class="badge bg-secondary fs-6">📋 Pending</span>
+                                    <p class="mb-0 text-muted small">Please complete KYC verification</p>
+                                {% endif %}
                             </div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Document Details -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Date of Birth</h6>
+                        <p class="mb-0">{{ kyc_documents.date_of_birth|date:"F d, Y" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Submission Date</h6>
+                        <p class="mb-0">{{ kyc_documents.created_at|date:"F d, Y g:i A" }}</p>
                     </div>
                 </div>
                 
