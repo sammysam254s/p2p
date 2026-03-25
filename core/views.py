@@ -342,7 +342,7 @@ def borrower_dashboard(request):
                         kyc_exists = True
                         logger.info(f"KYC status from Supabase for {request.user.username}: {kyc_status} (verified: {kyc_verified})")
                     else:
-                        # Create a pending KYC record in Supabase (ensure persistence)
+                        # Create a pending KYC record in Supabase (ensure persistence) - SILENTLY
                         import uuid
                         try:
                             kyc_data = {
@@ -363,12 +363,12 @@ def borrower_dashboard(request):
                                 kyc_exists = True
                                 logger.info(f"Created KYC record in Supabase for user {request.user.username}")
                             else:
-                                logger.error(f"Failed to create KYC record in Supabase for {request.user.username}")
+                                logger.warning(f"Could not create KYC record in Supabase for {request.user.username}")
                                 kyc_verified = False
                                 kyc_status = 'pending'
                                 kyc_exists = False
                         except Exception as e:
-                            logger.error(f"Error creating KYC record in Supabase: {str(e)}")
+                            logger.warning(f"KYC record creation failed (non-critical): {str(e)}")
                             kyc_verified = False
                             kyc_status = 'pending'
                             kyc_exists = False
@@ -379,7 +379,7 @@ def borrower_dashboard(request):
                     kyc_exists = False
                         
             except Exception as e:
-                logger.error(f"KYC check error: {str(e)}")
+                logger.warning(f"KYC check error (non-critical): {str(e)}")
                 kyc_verified = False
                 kyc_status = 'pending'
                 kyc_exists = False
@@ -994,32 +994,52 @@ def marketplace(request):
 def loan_detail(request, loan_id):
     """Detailed view of a specific loan with comprehensive error handling and redirects"""
     try:
-        # Get loan with all details from Supabase
-        loan = supabase_service.get_loan_with_details(loan_id)
+        logger.info(f"Attempting to load loan details for loan_id: {loan_id}")
         
-        if not loan:
-            messages.error(request, 'Loan not found.')
-            # Smart redirect based on user role
-            if hasattr(request.user, 'role'):
+        # Validate loan_id format (should be UUID)
+        if not loan_id or len(str(loan_id).strip()) == 0:
+            logger.error(f"Invalid loan_id provided: {loan_id}")
+            messages.error(request, 'Invalid loan ID.')
+            return redirect('admin_dashboard' if hasattr(request.user, 'role') and request.user.role == 'admin' else 'home')
+        
+        # Get current user from Supabase first
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            logger.error(f"User {request.user.username} not found in Supabase")
+            messages.error(request, 'User session error. Please login again.')
+            return redirect('login')
+        
+        user_role = current_user.get('role', 'borrower')
+        user_id = current_user.get('id')
+        
+        logger.info(f"User {request.user.username} (role: {user_role}) requesting loan {loan_id}")
+        
+        # Try to get loan from Supabase using direct table query first
+        try:
+            loan_result = supabase.table('loans').select('*').eq('id', loan_id).execute()
+            
+            if not loan_result.data:
+                logger.warning(f"Loan {loan_id} not found in Supabase")
+                messages.error(request, 'Loan not found.')
+                # Smart redirect based on user role
                 role_redirects = {
                     'borrower': 'borrower_dashboard',
                     'lender': 'marketplace',
                     'agent': 'agent_panel',
                     'admin': 'admin_dashboard'
                 }
-                return redirect(role_redirects.get(request.user.role, 'home'))
-            return redirect('home')
-        
-        # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user:
-            messages.error(request, 'User session error. Please login again.')
-            return redirect('login')
+                return redirect(role_redirects.get(user_role, 'home'))
+            
+            loan = loan_result.data[0]
+            logger.info(f"Found loan {loan_id} with status: {loan.get('status')}")
+            
+        except Exception as loan_fetch_error:
+            logger.error(f"Error fetching loan {loan_id} from Supabase: {str(loan_fetch_error)}")
+            messages.error(request, 'Error loading loan data. Please try again.')
+            return redirect('admin_dashboard' if user_role == 'admin' else 'home')
         
         # Check permissions with detailed access control
         borrower_id = loan.get('borrower_id')
-        user_role = current_user.get('role')
-        user_id = current_user.get('id')
         
         # Allow access for: loan owner, agents, lenders, and admins
         has_access = (
@@ -1029,6 +1049,7 @@ def loan_detail(request, loan_id):
         )
         
         if not has_access:
+            logger.warning(f"Access denied for user {request.user.username} to loan {loan_id}")
             messages.error(request, 'Access denied. You do not have permission to view this loan.')
             # Redirect based on user role with fallback
             role_redirects = {
@@ -1040,34 +1061,123 @@ def loan_detail(request, loan_id):
             redirect_url = role_redirects.get(user_role, 'home')
             return redirect(redirect_url)
         
-        # Get investments for this loan
-        investments = supabase_service.get_investments_by_loan(loan_id) or []
-        
-        # Enrich investments with lender details
-        for investment in investments:
-            lender = supabase_service.get_user_by_id(investment.get('lender_id'))
-            if lender:
-                investment['lender'] = lender
-        
-        # Add additional loan context
-        loan['can_invest'] = (
-            user_role == 'lender' and 
-            loan.get('status') == 'listed' and 
-            float(loan.get('funded_amount', 0)) < float(loan.get('principal_amount', 0))
-        )
-        
-        loan['is_owner'] = (user_id == borrower_id)
-        loan['is_admin'] = (user_role == 'admin')
-        
-        context = {
-            'loan': loan,
-            'investments': investments,
-            'user_role': user_role,
-        }
-        return render(request, 'core/loan_detail.html', context)
+        # Get additional loan details safely
+        try:
+            # Get collateral details
+            collateral = None
+            if loan.get('collateral_id'):
+                collateral_result = supabase.table('collateral').select('*').eq('id', loan['collateral_id']).execute()
+                if collateral_result.data:
+                    collateral = collateral_result.data[0]
+                    loan['collateral'] = collateral
+            
+            # Get borrower details
+            borrower = None
+            if loan.get('borrower_id'):
+                borrower = supabase_service.get_user_by_id(loan['borrower_id'])
+                if borrower:
+                    # Add Django User compatibility
+                    borrower['username'] = borrower.get('username', 'Unknown')
+                    loan['borrower'] = borrower
+            
+            # Get investments for this loan
+            investments_result = supabase.table('investments').select('*').eq('loan_id', loan_id).execute()
+            investments = investments_result.data or []
+            
+            # Enrich investments with lender details
+            for investment in investments:
+                lender = supabase_service.get_user_by_id(investment.get('lender_id'))
+                if lender:
+                    # Add Django User compatibility
+                    lender['username'] = lender.get('username', 'Unknown')
+                    investment['lender'] = lender
+                # Add date compatibility
+                if 'date' not in investment and 'created_at' in investment:
+                    investment['date'] = investment['created_at']
+            
+            # Calculate loan metrics safely
+            principal_amount = float(loan.get('principal_amount', 0))
+            funded_amount = float(loan.get('funded_amount', 0))
+            interest_rate = float(loan.get('interest_rate', 13.0))
+            duration_months = int(loan.get('duration_months', 3))
+            
+            # Add calculated fields
+            loan['platform_fee'] = principal_amount * 0.01  # 1%
+            loan['insurance_fee'] = principal_amount * 0.01  # 1%
+            loan['monthly_interest'] = principal_amount * (interest_rate / 100)
+            loan['total_repayment'] = principal_amount + (loan['monthly_interest'] * duration_months) + loan['platform_fee'] + loan['insurance_fee']
+            loan['funding_percentage'] = (funded_amount / principal_amount * 100) if principal_amount > 0 else 0
+            
+            # Add Django model compatibility methods
+            loan['calculate_platform_fee'] = loan['platform_fee']
+            loan['calculate_insurance_fee'] = loan['insurance_fee']
+            loan['calculate_monthly_interest'] = loan['monthly_interest']
+            loan['calculate_total_repayment'] = loan['total_repayment']
+            loan['get_funding_percentage'] = loan['funding_percentage']
+            
+            # Add days remaining calculation (assuming 30 days from creation)
+            from datetime import datetime, timedelta
+            try:
+                created_at = datetime.fromisoformat(loan['created_at'].replace('Z', '+00:00'))
+                deadline = created_at + timedelta(days=30)
+                days_remaining = max(0, (deadline - datetime.now(timezone.utc)).days)
+                loan['get_days_remaining'] = days_remaining
+            except:
+                loan['get_days_remaining'] = 30  # Default fallback
+            
+            # Add status display methods
+            status_display_map = {
+                'pending_collateral': 'Pending Collateral Verification',
+                'listed': 'Listed for Funding',
+                'active': 'Active',
+                'completed': 'Completed',
+                'defaulted': 'Defaulted'
+            }
+            loan['get_status_display'] = status_display_map.get(loan.get('status', 'pending_collateral'), loan.get('status', 'Unknown').title())
+            
+            # Add collateral compatibility if exists
+            if collateral:
+                collateral['calculate_max_loan_amount'] = float(collateral.get('market_value', 0)) * 0.7 * 0.5  # 30/50 rule
+                collateral_status_map = {
+                    'pending': 'Pending Verification',
+                    'verified': 'Verified',
+                    'rejected': 'Rejected'
+                }
+                collateral['get_status_display'] = collateral_status_map.get(collateral.get('status', 'pending'), collateral.get('status', 'Unknown').title())
+                loan['collateral'] = collateral
+            
+            # Add user context
+            loan['can_invest'] = (
+                user_role == 'lender' and 
+                loan.get('status') == 'listed' and 
+                funded_amount < principal_amount
+            )
+            
+            loan['is_owner'] = (user_id == borrower_id)
+            loan['is_admin'] = (user_role == 'admin')
+            
+            logger.info(f"Successfully loaded loan details for {loan_id}")
+            
+            context = {
+                'loan': loan,
+                'investments': investments,
+                'user_role': user_role,
+            }
+            return render(request, 'core/loan_detail.html', context)
+            
+        except Exception as details_error:
+            logger.error(f"Error loading loan details for {loan_id}: {str(details_error)}")
+            # Still show basic loan info even if details fail
+            context = {
+                'loan': loan,
+                'investments': [],
+                'user_role': user_role,
+                'error_message': 'Some loan details could not be loaded.'
+            }
+            return render(request, 'core/loan_detail.html', context)
         
     except Exception as e:
-        logger.error(f"Loan detail error for loan {loan_id}: {str(e)}")
+        logger.error(f"Critical error in loan_detail for loan {loan_id}: {str(e)}")
         messages.error(request, 'Error loading loan details. Please try again.')
         
         # Smart redirect on error

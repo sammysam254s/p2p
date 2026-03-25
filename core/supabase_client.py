@@ -25,7 +25,7 @@ class SupabaseTable:
     
     def eq(self, column, value):
         """Add equality filter"""
-        self._filters[column] = f'eq.{value}'
+        self._filters[column] = value
         return self
     
     def execute(self):
@@ -104,10 +104,7 @@ class SupabaseClient:
         
         if filters:
             for key, value in filters.items():
-                if isinstance(value, str):
-                    params[key] = f'eq.{value}'
-                else:
-                    params[key] = f'eq.{value}'
+                params[key] = f'eq.{value}'
         
         if order:
             params['order'] = order
