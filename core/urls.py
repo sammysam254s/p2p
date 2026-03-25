@@ -22,6 +22,7 @@ urlpatterns = [
     
     # Wallet URLs
     path('wallet/deposit/', views.wallet_deposit, name='wallet_deposit'),
+    path('wallet/withdraw/', views.wallet_withdraw, name='wallet_withdraw'),
     path('wallet/transactions/', views.wallet_transactions, name='wallet_transactions'),
     
     # Agent URLs

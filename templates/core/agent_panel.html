@@ -53,11 +53,12 @@
             </div>
             
             <!-- Wallet Balance -->
-            <div class="list-group-item">
+            <a href="{% url 'wallet_transactions' %}" class="list-group-item list-group-item-action">
                 <i class="fas fa-wallet me-3 text-success"></i>
                 <span>Wallet Balance</span>
                 <div class="fw-bold text-success">KES {{ user.wallet_balance|default:"0.00"|floatformat:2 }}</div>
-            </div>
+                <small class="text-muted">Click to manage wallet</small>
+            </a>
             
             <!-- Wallet Deposit -->
             <button class="list-group-item list-group-item-action text-success" data-bs-toggle="modal" data-bs-target="#walletDepositModal">

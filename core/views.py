@@ -866,13 +866,29 @@ def marketplace(request):
                 
                 # Validate investment amount
                 remaining_amount = Decimal(str(loan['principal_amount'])) - Decimal(str(loan.get('funded_amount', 0)))
-                if investment_amount > remaining_amount:
+                wallet_balance = Decimal(str(current_user.get('wallet_balance', 0)))
+                
+                if investment_amount > wallet_balance:
+                    messages.error(request, f'Insufficient wallet balance. You have KES {wallet_balance:,.2f} but need KES {investment_amount:,.2f}. Please deposit funds to your wallet first.')
+                    return redirect('marketplace')
+                elif investment_amount > remaining_amount:
                     messages.error(request, f'Investment amount exceeds remaining funding needed (KES {remaining_amount:,.2f})')
                 elif investment_amount <= 0:
                     messages.error(request, 'Investment amount must be greater than zero.')
                 elif investment_amount < 100:
                     messages.error(request, 'Minimum investment amount is KES 100.')
                 else:
+                    # Deduct from wallet balance first
+                    withdrawal_success = supabase_service.process_wallet_withdrawal(
+                        user_id=current_user['id'],
+                        amount=float(investment_amount),
+                        description=f'Investment in loan #{loan_id}'
+                    )
+                    
+                    if not withdrawal_success:
+                        messages.error(request, 'Failed to deduct investment amount from wallet. Please try again.')
+                        return redirect('marketplace')
+                    
                     # Create investment in Supabase
                     investment_result = supabase_service.create_investment(
                         lender_id=current_user['id'],
@@ -1659,6 +1675,66 @@ def wallet_transactions(request):
         logger.error(f"Wallet transactions view error: {str(e)}")
         messages.error(request, 'Error loading transactions.')
         return redirect('home')
+@login_required
+def wallet_withdraw(request):
+    """Handle wallet withdrawals for all user types"""
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+
+        if request.method == 'POST':
+            amount = request.POST.get('amount')
+            withdrawal_method = request.POST.get('withdrawal_method', 'mpesa')
+
+            try:
+                amount = float(amount)
+                current_balance = float(current_user.get('wallet_balance', 0))
+
+                if amount < 100:
+                    messages.error(request, 'Minimum withdrawal amount is KES 100.')
+                    return redirect('wallet_transactions')
+
+                if amount > current_balance:
+                    messages.error(request, f'Insufficient balance. You have KES {current_balance:,.2f} available.')
+                    return redirect('wallet_transactions')
+
+                # Calculate withdrawal fee
+                withdrawal_fee = 50 if amount < 5000 else 0
+                total_deduction = amount + withdrawal_fee
+
+                if total_deduction > current_balance:
+                    messages.error(request, f'Insufficient balance including withdrawal fee of KES {withdrawal_fee}. Total needed: KES {total_deduction:,.2f}')
+                    return redirect('wallet_transactions')
+
+                # Process withdrawal
+                success = supabase_service.process_wallet_withdrawal(
+                    user_id=current_user['id'],
+                    amount=total_deduction,
+                    description=f'Withdrawal of KES {amount:,.2f} via {withdrawal_method} (Fee: KES {withdrawal_fee})'
+                )
+
+                if success:
+                    fee_message = f' (including KES {withdrawal_fee} fee)' if withdrawal_fee > 0 else ''
+                    messages.success(request, f'Withdrawal request submitted! KES {amount:,.2f} will be sent to your {withdrawal_method} account{fee_message}.')
+                else:
+                    messages.error(request, 'Withdrawal failed. Please try again.')
+
+            except (ValueError, TypeError):
+                messages.error(request, 'Invalid withdrawal amount.')
+            except Exception as e:
+                logger.error(f"Wallet withdrawal error: {str(e)}")
+                messages.error(request, 'Withdrawal processing failed. Please try again.')
+
+        # Redirect back to wallet transactions
+        return redirect('wallet_transactions')
+
+    except Exception as e:
+        logger.error(f"Wallet withdrawal view error: {str(e)}")
+        messages.error(request, 'Error processing withdrawal.')
+        return redirect('wallet_transactions')
 
 @login_required
 def kyc_verification(request):
@@ -2349,3 +2425,64 @@ def borrower_documents(request):
         logger.error(f"Borrower documents error: {str(e)}")
         messages.error(request, 'Error loading documents.')
         return redirect('borrower_dashboard')
+
+@login_required
+def wallet_withdraw(request):
+    """Handle wallet withdrawals for all user types"""
+    try:
+        # Get current user from Supabase
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if not current_user:
+            messages.error(request, 'User not found.')
+            return redirect('home')
+        
+        if request.method == 'POST':
+            amount = request.POST.get('amount')
+            withdrawal_method = request.POST.get('withdrawal_method', 'mpesa')
+            
+            try:
+                amount = float(amount)
+                current_balance = float(current_user.get('wallet_balance', 0))
+                
+                if amount < 100:
+                    messages.error(request, 'Minimum withdrawal amount is KES 100.')
+                    return redirect('wallet_transactions')
+                
+                if amount > current_balance:
+                    messages.error(request, f'Insufficient balance. You have KES {current_balance:,.2f} available.')
+                    return redirect('wallet_transactions')
+                
+                # Calculate withdrawal fee
+                withdrawal_fee = 50 if amount < 5000 else 0
+                total_deduction = amount + withdrawal_fee
+                
+                if total_deduction > current_balance:
+                    messages.error(request, f'Insufficient balance including withdrawal fee of KES {withdrawal_fee}. Total needed: KES {total_deduction:,.2f}')
+                    return redirect('wallet_transactions')
+                
+                # Process withdrawal
+                success = supabase_service.process_wallet_withdrawal(
+                    user_id=current_user['id'],
+                    amount=total_deduction,
+                    description=f'Withdrawal of KES {amount:,.2f} via {withdrawal_method} (Fee: KES {withdrawal_fee})'
+                )
+                
+                if success:
+                    fee_message = f' (including KES {withdrawal_fee} fee)' if withdrawal_fee > 0 else ''
+                    messages.success(request, f'Withdrawal request submitted! KES {amount:,.2f} will be sent to your {withdrawal_method} account{fee_message}.')
+                else:
+                    messages.error(request, 'Withdrawal failed. Please try again.')
+                    
+            except (ValueError, TypeError):
+                messages.error(request, 'Invalid withdrawal amount.')
+            except Exception as e:
+                logger.error(f"Wallet withdrawal error: {str(e)}")
+                messages.error(request, 'Withdrawal processing failed. Please try again.')
+        
+        # Redirect back to wallet transactions
+        return redirect('wallet_transactions')
+        
+    except Exception as e:
+        logger.error(f"Wallet withdrawal view error: {str(e)}")
+        messages.error(request, 'Error processing withdrawal.')
+        return redirect('wallet_transactions')

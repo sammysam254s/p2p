@@ -38,11 +38,12 @@
             </div>
             
             <!-- Wallet Balance -->
-            <div class="list-group-item">
+            <a href="{% url 'wallet_transactions' %}" class="list-group-item list-group-item-action">
                 <i class="fas fa-wallet me-3 text-success"></i>
                 <span>Wallet Balance</span>
                 <div class="fw-bold text-success">KES {{ wallet_balance|floatformat:2 }}</div>
-            </div>
+                <small class="text-muted">Click to manage wallet</small>
+            </a>
             
             <!-- Wallet Deposit -->
             <button class="list-group-item list-group-item-action text-success" data-bs-toggle="modal" data-bs-target="#walletDepositModal">
@@ -202,7 +203,7 @@
                                     
                                     <div class="card-footer">
                                         {% if loan.get_funding_percentage < 100 %}
-                                            <form method="post">
+                                            <form method="post" onsubmit="return checkWalletBalance(event, this)">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="loan_id" value="{{ loan.id }}">
                                                 <div class="input-group mb-2">
@@ -264,6 +265,41 @@
                         <p class="small">Earn 13% monthly interest plus platform fees. Returns paid monthly.</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Insufficient Funds Modal -->
+<div class="modal fade" id="insufficientFundsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2 text-warning"></i>Insufficient Wallet Balance
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-wallet me-2"></i>
+                    <strong>Current Balance:</strong> KES <span id="currentBalance">{{ wallet_balance|floatformat:2 }}</span>
+                </div>
+                
+                <p>You don't have enough funds in your wallet to make this investment.</p>
+                <p><strong>Required:</strong> KES <span id="requiredAmount">0</span></p>
+                <p><strong>Shortfall:</strong> KES <span id="shortfallAmount">0</span></p>
+                
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-lightbulb me-2"></i>Quick Solution:</h6>
+                    <p class="mb-0">Deposit funds to your wallet now and start investing immediately!</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#walletDepositModal" data-bs-dismiss="modal">
+                    <i class="fas fa-plus me-1"></i>Deposit Funds
+                </button>
             </div>
         </div>
     </div>
@@ -345,6 +381,29 @@
 // setTimeout(function() {
 //     location.reload();
 // }, 60000);
+
+// Wallet balance check for investments
+function checkWalletBalance(event, form) {
+    const investmentAmount = parseFloat(form.querySelector('input[name="investment_amount"]').value) || 0;
+    const walletBalance = {{ wallet_balance }};
+    
+    if (investmentAmount > walletBalance) {
+        event.preventDefault();
+        
+        // Update modal with amounts
+        document.getElementById('currentBalance').textContent = walletBalance.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('requiredAmount').textContent = investmentAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('shortfallAmount').textContent = (investmentAmount - walletBalance).toLocaleString('en-US', {minimumFractionDigits: 2});
+        
+        // Show insufficient funds modal
+        const modal = new bootstrap.Modal(document.getElementById('insufficientFundsModal'));
+        modal.show();
+        
+        return false;
+    }
+    
+    return true;
+}
 
 // Investment amount validation
 document.addEventListener('DOMContentLoaded', function() {
