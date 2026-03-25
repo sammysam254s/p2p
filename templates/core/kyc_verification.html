@@ -74,7 +74,7 @@
                 <h5><i class="fas fa-upload me-2"></i>Submit Verification Documents</h5>
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
                     
                     <!-- Personal Information -->
@@ -103,15 +103,50 @@
                         </div>
                     </div>
                     
+                    <!-- Document Images -->
+                    <h6 class="text-primary mb-3">Document Images</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="id_front_image" class="form-label">ID Front Image</label>
+                            <input type="file" class="form-control" id="id_front_image" name="id_front_image" 
+                                   accept="image/*" required>
+                            <small class="form-text text-muted">Upload clear photo of ID front side</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="id_back_image" class="form-label">ID Back Image</label>
+                            <input type="file" class="form-control" id="id_back_image" name="id_back_image" 
+                                   accept="image/*" required>
+                            <small class="form-text text-muted">Upload clear photo of ID back side</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="selfie_image" class="form-label">Selfie Photo</label>
+                            <input type="file" class="form-control" id="selfie_image" name="selfie_image" 
+                                   accept="image/*" required>
+                            <small class="form-text text-muted">Take a clear selfie photo</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="signature_image" class="form-label">Signature Image</label>
+                            <input type="file" class="form-control" id="signature_image" name="signature_image" 
+                                   accept="image/*" required>
+                            <small class="form-text text-muted">Upload image of your signature on white paper</small>
+                        </div>
+                    </div>
+                    
                     <!-- Guidelines -->
                     <div class="alert alert-info mb-4">
-                        <h6><i class="fas fa-info-circle me-2"></i>Verification Guidelines:</h6>
+                        <h6><i class="fas fa-info-circle me-2"></i>Photo Guidelines:</h6>
                         <ul class="mb-0 small">
-                            <li>Ensure your full name matches your ID document exactly</li>
-                            <li>Provide a clear, valid national ID number (minimum 6 characters)</li>
-                            <li>Make sure all information is accurate and complete</li>
-                            <li>Double-check spelling and number accuracy</li>
+                            <li>Ensure all images are clear and well-lit</li>
+                            <li>ID photos should show all text clearly</li>
+                            <li>Selfie should show your face clearly without sunglasses or hat</li>
+                            <li><strong>Signature is required:</strong> Sign on white paper with black/blue ink and photograph it</li>
                             <li>All information must match exactly</li>
+                            <li>Maximum file size: 5MB per image</li>
+                            <li>Supported formats: JPG, PNG, JPEG</li>
+                            <li><strong>All 4 images are mandatory for verification</strong></li>
                         </ul>
                     </div>
                     
@@ -136,10 +171,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const fullName = document.getElementById('full_name').value.trim();
             const idNumber = document.getElementById('id_number').value.trim();
             const dateOfBirth = document.getElementById('date_of_birth').value;
+            const idFrontImage = document.getElementById('id_front_image').files[0];
+            const idBackImage = document.getElementById('id_back_image').files[0];
+            const selfieImage = document.getElementById('selfie_image').files[0];
+            const signatureImage = document.getElementById('signature_image').files[0];
             
+            // Validate required fields
             if (!fullName || !idNumber || !dateOfBirth) {
                 e.preventDefault();
-                alert('Please fill in all required fields.');
+                alert('Please fill in all required personal information fields.');
                 return false;
             }
             
@@ -148,8 +188,100 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('ID number must be at least 6 characters long.');
                 return false;
             }
+            
+            // Validate required images (including signature)
+            if (!idFrontImage || !idBackImage || !selfieImage || !signatureImage) {
+                e.preventDefault();
+                alert('Please upload all required images: ID front, ID back, selfie photo, and signature.');
+                return false;
+            }
+            
+            // Validate file sizes (5MB max)
+            const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+            const files = [idFrontImage, idBackImage, selfieImage, signatureImage];
+            const fileInputs = ['ID Front', 'ID Back', 'Selfie', 'Signature'];
+            
+            for (let i = 0; i < files.length; i++) {
+                if (files[i] && files[i].size > maxSize) {
+                    e.preventDefault();
+                    alert(`${fileInputs[i]} image is too large. Maximum size is 5MB.`);
+                    return false;
+                }
+            }
+            
+            // Validate file types
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            for (let i = 0; i < files.length; i++) {
+                if (files[i] && !allowedTypes.includes(files[i].type)) {
+                    e.preventDefault();
+                    alert(`${fileInputs[i]} must be a JPG, JPEG, or PNG image.`);
+                    return false;
+                }
+            }
         });
     }
+    
+    // Add image preview functionality
+    const imageInputs = document.querySelectorAll('input[type="file"]');
+    
+    imageInputs.forEach(input => {
+        input.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // Validate file size
+                const maxSize = 5 * 1024 * 1024; // 5MB
+                if (file.size > maxSize) {
+                    alert('File is too large. Maximum size is 5MB.');
+                    input.value = '';
+                    return;
+                }
+                
+                // Validate file type
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+                if (!allowedTypes.includes(file.type)) {
+                    alert('Please select a JPG, JPEG, or PNG image.');
+                    input.value = '';
+                    return;
+                }
+                
+                // Create preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    // Remove existing preview
+                    let existingPreview = input.parentNode.querySelector('.image-preview');
+                    if (existingPreview) {
+                        existingPreview.remove();
+                    }
+                    
+                    // Create new preview
+                    const preview = document.createElement('img');
+                    preview.className = 'image-preview mt-2';
+                    preview.style.maxWidth = '200px';
+                    preview.style.maxHeight = '150px';
+                    preview.style.border = '1px solid #ddd';
+                    preview.style.borderRadius = '4px';
+                    preview.style.objectFit = 'cover';
+                    preview.src = e.target.result;
+                    
+                    // Add preview after the input
+                    input.parentNode.appendChild(preview);
+                    
+                    // Add remove button
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'btn btn-sm btn-outline-danger mt-1';
+                    removeBtn.innerHTML = '<i class="fas fa-times"></i> Remove';
+                    removeBtn.onclick = function() {
+                        input.value = '';
+                        preview.remove();
+                        removeBtn.remove();
+                    };
+                    input.parentNode.appendChild(removeBtn);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    });
 });
 </script>
 
