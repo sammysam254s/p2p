@@ -123,9 +123,10 @@
     <div class="col-md-4">
         <div class="card text-center">
             <div class="card-body">
-                <i class="fas fa-percentage fa-2x text-primary mb-2"></i>
-                <h5>Interest Rate</h5>
-                <h3 class="text-primary">13% <small>per month</small></h3>
+                <i class="fas fa-wallet fa-2x text-primary mb-2"></i>
+                <h5>Your Wallet Balance</h5>
+                <h3 class="text-primary">KES {{ wallet_balance|floatformat:2 }}</h3>
+                <small class="text-muted">Available for investments</small>
             </div>
         </div>
     </div>
@@ -388,21 +389,7 @@
 // Wallet balance check for investments
 function checkWalletBalance(event, form) {
     const investmentAmount = parseFloat(form.querySelector('input[name="investment_amount"]').value) || 0;
-    
-    // Get current wallet balance from the page (in case it was updated after deposit)
-    const walletBalanceElement = document.querySelector('#currentBalance');
-    let walletBalance = {{ wallet_balance }};
-    
-    // If we can find the current balance element, use that instead
-    if (walletBalanceElement) {
-        const balanceText = walletBalanceElement.textContent.replace(/[^\d.]/g, '');
-        const currentBalance = parseFloat(balanceText) || 0;
-        if (currentBalance > 0) {
-            walletBalance = currentBalance;
-        }
-    }
-    
-    console.log(`Investment: ${investmentAmount}, Wallet: ${walletBalance}`); // Debug log
+    const walletBalance = parseFloat({{ wallet_balance|default:"0" }}) || 0;
     
     if (investmentAmount > walletBalance) {
         event.preventDefault();
@@ -419,6 +406,7 @@ function checkWalletBalance(event, form) {
         return false;
     }
     
+    // Investment approved - sufficient wallet balance
     return true;
 }
 
@@ -431,11 +419,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (amountInput) {
             amountInput.addEventListener('input', function() {
                 const amount = parseFloat(this.value) || 0;
-                const max = parseFloat(this.getAttribute('max')) || 0;
                 
-                if (amount > max) {
-                    this.setCustomValidity(`Maximum investment: KES ${max.toFixed(2)}`);
-                } else if (amount < 100) {
+                // Only validate minimum amount, not maximum (wallet balance is checked on submit)
+                if (amount < 100 && amount > 0) {
                     this.setCustomValidity('Minimum investment: KES 100');
                 } else {
                     this.setCustomValidity('');

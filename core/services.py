@@ -53,12 +53,14 @@ class SupabaseService:
     """Main service class that combines all Supabase operations"""
     
     def __init__(self):
-        from .supabase_client import supabase
+        from .supabase_client import supabase, kyc_service, document_service
         self.supabase = supabase
         self.user_service = user_service
         self.collateral_service = collateral_service
         self.loan_service = loan_service
         self.investment_service = investment_service
+        self.kyc_service = kyc_service
+        self.document_service = document_service
         self.calculator = LoanCalculatorService()
     
     # User operations
@@ -272,14 +274,14 @@ class SupabaseService:
                     return transaction_result.data is not None
                     
                 except Exception as transaction_error:
-                    print(f"Transaction creation error: {str(transaction_error)}")
+                    logger.error(f"Transaction creation error: {str(transaction_error)}")
                     # Even if transaction logging fails, the deposit succeeded
                     return True
 
             return False
 
         except Exception as e:
-            print(f"Wallet deposit error: {str(e)}")
+            logger.error(f"Wallet deposit error: {str(e)}")
             return False
 
     def process_wallet_withdrawal(self, user_id, amount, description='Withdrawal'):
@@ -338,6 +340,49 @@ class SupabaseService:
         except Exception as e:
             print(f"Get wallet balance error: {str(e)}")
             return 0.0
+
+    # KYC operations
+    def create_kyc_verification(self, user_id, full_name, id_number, date_of_birth, 
+                               id_front_image=None, id_back_image=None, 
+                               selfie_image=None, signature_image=None):
+        """Create KYC verification"""
+        return self.kyc_service.create_kyc_verification(
+            user_id, full_name, id_number, date_of_birth,
+            id_front_image, id_back_image, selfie_image, signature_image
+        )
+    
+    def get_kyc_by_user_id(self, user_id):
+        """Get KYC verification by user ID"""
+        return self.kyc_service.get_kyc_by_user_id(user_id)
+    
+    def get_kyc_by_id(self, kyc_id):
+        """Get KYC verification by ID"""
+        return self.kyc_service.get_kyc_by_id(kyc_id)
+    
+    def update_kyc_status(self, kyc_id, status, verified_by=None, notes=''):
+        """Update KYC verification status"""
+        return self.kyc_service.update_kyc_status(kyc_id, status, verified_by, notes)
+    
+    def get_pending_kyc_verifications(self):
+        """Get pending KYC verifications"""
+        return self.kyc_service.get_pending_kyc_verifications()
+    
+    def get_all_kyc_verifications(self):
+        """Get all KYC verifications"""
+        return self.kyc_service.get_all_kyc_verifications()
+    
+    # Document operations
+    def update_loan_contract(self, loan_id, contract_pdf_url):
+        """Update loan with contract PDF"""
+        return self.document_service.update_loan_contract(loan_id, contract_pdf_url)
+    
+    def get_loans_with_contracts(self, borrower_id):
+        """Get loans with contract PDFs"""
+        return self.document_service.get_loans_with_contracts(borrower_id)
+    
+    def get_loan_contract_url(self, loan_id):
+        """Get loan contract PDF URL"""
+        return self.document_service.get_loan_contract_url(loan_id)
 
 
 # Global service instance

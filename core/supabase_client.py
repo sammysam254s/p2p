@@ -110,7 +110,7 @@ class SupabaseClient:
             return None
     
     def select(self, table, columns="*", filters=None, order=None, limit=None):
-        """Select data from table - simplified without caching for now"""
+        """Select data from table"""
         params = {'select': columns}
         
         if filters:
@@ -122,7 +122,7 @@ class SupabaseClient:
         
         if limit:
             params['limit'] = limit
-            
+        
         return self._make_request('GET', table, params=params)
     
     def insert(self, table, data):
@@ -186,9 +186,11 @@ class SupabaseUserService:
         return self.client.insert('users', user_data)
     
     def get_user_by_username(self, username):
-        """Get user by username - simplified without caching for now"""
+        """Get user by username"""
         result = self.client.select('users', filters={'username': username})
-        return result[0] if result else None
+        if result and len(result) > 0:
+            return result[0]
+        return None
     
     def get_user_by_email(self, email):
         """Get user by email - simplified without caching for now"""
@@ -339,6 +341,104 @@ class SupabaseLoanService:
         return result[0] if result else None
 
 
+class SupabaseKYCService:
+    """Service for KYC verification operations"""
+    
+    def __init__(self):
+        self.client = SupabaseClient()
+    
+    def create_kyc_verification(self, user_id, full_name, id_number, date_of_birth, 
+                               id_front_image=None, id_back_image=None, 
+                               selfie_image=None, signature_image=None):
+        """Create a new KYC verification record"""
+        kyc_data = {
+            'id': str(uuid.uuid4()),
+            'user_id': user_id,
+            'full_name': full_name,
+            'id_number': id_number,
+            'date_of_birth': date_of_birth,
+            'id_front_image': id_front_image or '',
+            'id_back_image': id_back_image or '',
+            'selfie_image': selfie_image or '',
+            'signature_image': signature_image or '',
+            'status': 'pending',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        return self.client.insert('kyc_verifications', kyc_data)
+    
+    def get_kyc_by_user_id(self, user_id):
+        """Get KYC verification by user ID"""
+        result = self.client.select('kyc_verifications', filters={'user_id': user_id})
+        return result[0] if result else None
+    
+    def get_kyc_by_id(self, kyc_id):
+        """Get KYC verification by ID"""
+        result = self.client.select('kyc_verifications', filters={'id': kyc_id})
+        return result[0] if result else None
+    
+    def update_kyc_status(self, kyc_id, status, verified_by=None, notes=''):
+        """Update KYC verification status"""
+        data = {
+            'status': status,
+            'verification_notes': notes,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        if status == 'verified' and verified_by:
+            data['verified_by'] = verified_by
+            data['verified_at'] = datetime.now(timezone.utc).isoformat()
+        
+        return self.client.update('kyc_verifications', data, {'id': kyc_id})
+    
+    def get_pending_kyc_verifications(self):
+        """Get all pending KYC verifications"""
+        return self.client.select('kyc_verifications', filters={'status': 'pending'}, order='created_at.desc')
+    
+    def get_all_kyc_verifications(self):
+        """Get all KYC verifications"""
+        return self.client.select('kyc_verifications', order='created_at.desc')
+
+
+class SupabaseDocumentService:
+    """Service for document operations"""
+    
+    def __init__(self):
+        self.client = SupabaseClient()
+    
+    def update_loan_contract(self, loan_id, contract_pdf_url):
+        """Update loan with contract PDF URL"""
+        data = {
+            'contract_pdf': contract_pdf_url,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        return self.client.update('loans', data, {'id': loan_id})
+    
+    def get_loans_with_contracts(self, borrower_id):
+        """Get loans that have contract PDFs"""
+        # Get all loans for borrower
+        loans = self.client.select('loans', filters={'borrower_id': borrower_id}, order='created_at.desc')
+        
+        # Filter loans that have contracts
+        loans_with_contracts = []
+        if loans:
+            for loan in loans:
+                if loan.get('contract_pdf') and loan['contract_pdf'].strip():
+                    # Get collateral details
+                    collateral = self.client.select('collateral', filters={'id': loan['collateral_id']})
+                    if collateral:
+                        loan['collateral'] = collateral[0]
+                    loans_with_contracts.append(loan)
+        
+        return loans_with_contracts
+    
+    def get_loan_contract_url(self, loan_id):
+        """Get contract PDF URL for a loan"""
+        result = self.client.select('loans', columns='contract_pdf', filters={'id': loan_id})
+        if result and result[0].get('contract_pdf'):
+            return result[0]['contract_pdf']
+        return None
+
+
 class SupabaseInvestmentService:
     """Service for investment operations"""
     
@@ -376,3 +476,5 @@ user_service = SupabaseUserService()
 collateral_service = SupabaseCollateralService()
 loan_service = SupabaseLoanService()
 investment_service = SupabaseInvestmentService()
+kyc_service = SupabaseKYCService()
+document_service = SupabaseDocumentService()

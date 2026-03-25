@@ -38,6 +38,31 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def get_supabase_user(request):
+    """
+    Get user from Supabase using email first (more reliable), then username fallback.
+    This ensures we always get the correct Supabase user regardless of Django username mismatches.
+    """
+    current_user = None
+    
+    # Try email first (most reliable for admin users)
+    if hasattr(request.user, 'email') and request.user.email:
+        current_user = supabase_service.get_user_by_email(request.user.email)
+        if current_user:
+            logger.info(f"Found Supabase user by email: {request.user.email}")
+    
+    # Fallback to username if email lookup fails
+    if not current_user and hasattr(request.user, 'username') and request.user.username:
+        current_user = supabase_service.get_user_by_username(request.user.username)
+        if current_user:
+            logger.info(f"Found Supabase user by username: {request.user.username}")
+    
+    if not current_user:
+        logger.warning(f"No Supabase user found for Django user: {request.user.username} ({request.user.email})")
+    
+    return current_user
+
+
 class CustomLoginView(LoginView):
     """Optimized custom login view"""
     template_name = 'registration/login.html'
@@ -287,12 +312,8 @@ def borrower_dashboard(request):
             messages.error(request, 'Access denied. This page is for borrowers.')
             return redirect('home')
         
-        # Try to get user from Supabase, but don't fail if not found
-        current_user = None
-        try:
-            current_user = supabase_service.get_user_by_username(request.user.username)
-        except Exception as e:
-            logger.warning(f"Could not get user from Supabase: {str(e)}")
+        # Try to get user from Supabase using the helper function
+        current_user = get_supabase_user(request)
         
         # If user not in Supabase, create them
         if not current_user:
@@ -788,26 +809,10 @@ def agent_panel(request):
 def marketplace(request):
     """Enhanced lender marketplace - Supabase Primary"""
     try:
-        # Get current user from Supabase (primary database)
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        # Get current user from Supabase ONLY (no Django fallback)
+        current_user = get_supabase_user(request)
         if not current_user:
-            # Create user in Supabase if not exists
-            try:
-                current_user = supabase_service.create_user(
-                    username=request.user.username,
-                    email=request.user.email,
-                    password="",
-                    role=getattr(request.user, 'role', 'lender'),
-                    phone_number=getattr(request.user, 'phone_number', ''),
-                    national_id=getattr(request.user, 'national_id', ''),
-                    first_name=request.user.first_name,
-                    last_name=request.user.last_name
-                )
-            except Exception as e:
-                logger.error(f"Error creating user in Supabase: {str(e)}")
-        
-        if not current_user:
-            messages.error(request, 'User not found in system.')
+            messages.error(request, 'User not found in Supabase system. Please contact support.')
             return redirect('home')
         
         # Allow admin to access marketplace
@@ -966,13 +971,22 @@ def marketplace(request):
         total_loans_available = len(valid_loans)
         total_funding_needed = sum(loan.get('remaining_amount', 0) for loan in valid_loans)
         
+        # Force refresh user data from Supabase to ensure we have latest wallet balance
+        try:
+            refreshed_user = get_supabase_user(request)
+            if refreshed_user:
+                wallet_balance = float(refreshed_user.get('wallet_balance', 0))
+                current_user = refreshed_user
+        except Exception as refresh_error:
+            logger.warning(f"Could not refresh user data: {str(refresh_error)}")
+        
         context = {
             'listed_loans': valid_loans,
             'lender_investments': lender_investments,
             'total_invested': total_invested,
             'total_loans_available': total_loans_available,
             'total_funding_needed': total_funding_needed,
-            'wallet_balance': float(current_user.get('wallet_balance', 0)),
+            'wallet_balance': wallet_balance,
             'is_admin': user_role == 'admin',
         }
         return render(request, 'core/marketplace.html', context)
@@ -1758,28 +1772,7 @@ def kyc_verification(request):
     """Supabase-only KYC verification with persistent storage - NO Django dependencies"""
     try:
         # Get current user from Supabase (ONLY source - no Django fallback)
-        current_user = supabase_service.get_user_by_username(request.user.username)
-        if not current_user:
-            # Create user in Supabase if not exists (ensure persistence)
-            try:
-                current_user = supabase_service.create_user(
-                    username=request.user.username,
-                    email=request.user.email,
-                    password="",  # Password not needed for existing users
-                    role=getattr(request.user, 'role', 'borrower'),
-                    phone_number=getattr(request.user, 'phone_number', ''),
-                    national_id=getattr(request.user, 'national_id', ''),
-                    first_name=request.user.first_name,
-                    last_name=request.user.last_name
-                )
-                if current_user and isinstance(current_user, list) and len(current_user) > 0:
-                    current_user = current_user[0]
-                logger.info(f"Created user in Supabase for KYC: {request.user.username}")
-            except Exception as e:
-                logger.error(f"Error creating user in Supabase: {str(e)}")
-                messages.error(request, 'User profile error. Please contact support.')
-                return redirect('home')
-        
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User not found in system. Please contact support.')
             return redirect('home')
@@ -2123,7 +2116,7 @@ def download_contract(request, loan_id):
             return redirect('home')
         
         # Get current user from Supabase
-        current_user = supabase_service.get_user_by_username(request.user.username)
+        current_user = get_supabase_user(request)
         if not current_user:
             messages.error(request, 'User session error. Please login again.')
             return redirect('login')
@@ -2147,13 +2140,20 @@ def download_contract(request, loan_id):
             messages.error(request, 'You do not have permission to download this contract.')
             return redirect('home')
         
+        # Get contract URL from Supabase
+        contract_url = supabase_service.get_loan_contract_url(loan_id)
+        if not contract_url:
+            messages.error(request, 'Contract PDF not available yet.')
+            return redirect('borrower_documents')
+        
         # For now, return a simple message since PDF generation is complex
-        messages.info(request, 'Contract download feature is being updated for the new system.')
-        return redirect('borrower_dashboard')
+        messages.info(request, f'Contract download feature is being updated. Contract URL: {contract_url}')
+        return redirect('borrower_documents')
         
     except Exception as e:
         logger.error(f"Contract download error: {str(e)}")
         messages.error(request, 'Error downloading contract.')
+        return redirect('borrower_documents')
         return redirect('home')
 
 
@@ -2409,29 +2409,28 @@ def borrower_collaterals(request):
 
 @login_required
 def borrower_documents(request):
-    """Borrower's documents and PDFs page"""
+    """Borrower's documents and PDFs page - Supabase ONLY"""
     try:
+        # Get current user from Supabase
+        current_user = get_supabase_user(request)
+        if not current_user:
+            messages.error(request, 'User not found in system.')
+            return redirect('home')
+        
         # Check if user is borrower or admin
-        user_role = getattr(request.user, 'role', 'borrower')
+        user_role = current_user.get('role', 'borrower')
         if user_role not in ['borrower', 'admin']:
             messages.error(request, 'Access denied. This page is for borrowers.')
             return redirect('home')
         
-        # Get borrower's loans with contracts
-        loans_with_contracts = Loan.objects.filter(
-            borrower=request.user,
-            contract_pdf__isnull=False
-        ).exclude(contract_pdf='').select_related('collateral').order_by('-created_at')
+        # Get borrower's loans with contracts from Supabase
+        loans_with_contracts = supabase_service.get_loans_with_contracts(current_user['id'])
         
-        # Get KYC documents
-        kyc_documents = None
-        try:
-            kyc_documents = request.user.kyc
-        except KYCVerification.DoesNotExist:
-            pass
+        # Get KYC documents from Supabase
+        kyc_documents = supabase_service.get_kyc_by_user_id(current_user['id'])
         
         context = {
-            'loans_with_contracts': loans_with_contracts,
+            'loans_with_contracts': loans_with_contracts or [],
             'kyc_documents': kyc_documents,
             'is_admin': user_role == 'admin',
             'user_role': user_role,
@@ -2440,5 +2439,5 @@ def borrower_documents(request):
         
     except Exception as e:
         logger.error(f"Borrower documents error: {str(e)}")
-        messages.error(request, 'Error loading documents.')
+        messages.error(request, 'Error loading documents from Supabase.')
         return redirect('borrower_dashboard')
