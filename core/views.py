@@ -1628,18 +1628,23 @@ def wallet_deposit(request):
 
                 # SIMULATED DEPOSIT - No real payment processing
                 # In production, this would integrate with M-Pesa, bank APIs, etc.
-                success = supabase_service.process_wallet_deposit(
-                    user_id=current_user['id'],
-                    amount=amount,
-                    payment_method=payment_method
-                )
+                try:
+                    success = supabase_service.process_wallet_deposit(
+                        user_id=current_user['id'],
+                        amount=amount,
+                        payment_method=payment_method
+                    )
 
-                if success:
-                    messages.success(request, 
-                        f'✅ SIMULATED DEPOSIT: Successfully added KES {amount:,.2f} to your wallet! '
-                        f'(In production, this would process via {payment_method})')
-                else:
-                    messages.error(request, 'Simulated deposit failed. Please try again.')
+                    if success:
+                        messages.success(request, 
+                            f'✅ SIMULATED DEPOSIT: Successfully added KES {amount:,.2f} to your wallet! '
+                            f'(In production, this would process via {payment_method})')
+                    else:
+                        messages.error(request, 'Simulated deposit failed. Please check the logs and try again.')
+                        
+                except Exception as deposit_error:
+                    logger.error(f"Deposit service error: {str(deposit_error)}")
+                    messages.error(request, f'Deposit service error: {str(deposit_error)}. Please try again.')
 
             except (ValueError, TypeError):
                 messages.error(request, 'Invalid deposit amount.')

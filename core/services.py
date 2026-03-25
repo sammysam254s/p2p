@@ -53,6 +53,8 @@ class SupabaseService:
     """Main service class that combines all Supabase operations"""
     
     def __init__(self):
+        from .supabase_client import supabase
+        self.supabase = supabase
         self.user_service = user_service
         self.collateral_service = collateral_service
         self.loan_service = loan_service
@@ -258,15 +260,21 @@ class SupabaseService:
 
             if update_result.data:
                 # Create wallet transaction record
-                transaction_result = self.supabase.table('wallet_transactions').insert({
-                    'user_id': user_id,
-                    'transaction_type': 'credit',
-                    'amount': float(amount),
-                    'description': f'SIMULATED DEPOSIT: {payment_method} deposit (Demo Mode)',
-                    'balance_after': new_balance
-                }).execute()
-
-                return transaction_result.data is not None
+                try:
+                    transaction_result = self.supabase.table('wallet_transactions').insert({
+                        'user_id': user_id,
+                        'transaction_type': 'credit',
+                        'amount': float(amount),
+                        'description': f'SIMULATED DEPOSIT: {payment_method} deposit (Demo Mode)',
+                        'balance_after': new_balance
+                    }).execute()
+                    
+                    return transaction_result.data is not None
+                    
+                except Exception as transaction_error:
+                    print(f"Transaction creation error: {str(transaction_error)}")
+                    # Even if transaction logging fails, the deposit succeeded
+                    return True
 
             return False
 

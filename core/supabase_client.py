@@ -28,6 +28,17 @@ class SupabaseTable:
         self._filters[column] = value
         return self
     
+    def order(self, column, desc=False):
+        """Add ordering"""
+        direction = 'desc' if desc else 'asc'
+        self._order = f"{column}.{direction}"
+        return self
+    
+    def limit(self, count):
+        """Add limit"""
+        self._limit = count
+        return self
+    
     def execute(self):
         """Execute the query"""
         if hasattr(self, '_insert_data'):
