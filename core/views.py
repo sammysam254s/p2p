@@ -482,30 +482,43 @@ def borrower_dashboard(request):
                         messages.error(request, 'Error creating collateral record. Please try again.')
                         return redirect('borrower_dashboard')
                     
+                    # Extract collateral data (create_collateral returns a list)
+                    if isinstance(supabase_collateral, list) and len(supabase_collateral) > 0:
+                        collateral_data = supabase_collateral[0]
+                    else:
+                        collateral_data = supabase_collateral
+                    
                     # Validate loan amount against collateral
-                    if supabase_collateral and 'market_value' in supabase_collateral:
+                    if collateral_data and 'market_value' in collateral_data:
                         # Calculate max loan amount using the 30/50 rule
-                        market_value = float(supabase_collateral['market_value'])
+                        market_value = float(collateral_data['market_value'])
                         max_loan_amount = market_value * 0.7 * 0.5  # 30% devaluation, then 50% of devalued amount
+                        logger.info(f"Collateral validation: Market value=KES {market_value:,.2f}, Max loan=KES {max_loan_amount:,.2f}")
                     else:
                         max_loan_amount = 0
+                        logger.error(f"No market_value found in collateral data: {collateral_data}")
+                    
                     requested_amount = float(loan_form.cleaned_data['principal_amount'])
                     
                     if requested_amount > max_loan_amount:
                         # Delete the collateral we just created
                         try:
-                            supabase.table('collateral').delete().eq('id', supabase_collateral['id']).execute()
-                        except:
-                            pass
+                            collateral_id = collateral_data['id'] if collateral_data else None
+                            if collateral_id:
+                                supabase.table('collateral').delete().eq('id', collateral_id).execute()
+                        except Exception as cleanup_error:
+                            logger.warning(f"Failed to cleanup collateral: {str(cleanup_error)}")
+                        
                         messages.error(request, 
                             f'Requested amount (KES {requested_amount:,.2f}) exceeds maximum '
-                            f'allowed (KES {max_loan_amount:,.2f}) based on collateral value.')
+                            f'allowed (KES {max_loan_amount:,.2f}) based on collateral value of KES {market_value:,.2f}. '
+                            f'Maximum loan is 35% of collateral value (70% after 30% devaluation, then 50% of that).')
                         return redirect('borrower_dashboard')
                     
                     # Create loan in Supabase FIRST (primary database)
                     supabase_loan = supabase_service.create_loan(
                         borrower_id=supabase_user_id,
-                        collateral_id=supabase_collateral['id'],
+                        collateral_id=collateral_data['id'],
                         principal_amount=requested_amount,
                         interest_rate=float(loan_form.cleaned_data.get('interest_rate', 13.0)),
                         duration_months=int(loan_form.cleaned_data['duration_months'])
@@ -514,8 +527,11 @@ def borrower_dashboard(request):
                     if not supabase_loan:
                         # Delete the collateral we created
                         try:
-                            supabase.table('collateral').delete().eq('id', supabase_collateral['id']).execute()
-                        except:
+                            collateral_id = collateral_data['id'] if collateral_data else None
+                            if collateral_id:
+                                supabase.table('collateral').delete().eq('id', collateral_id).execute()
+                        except Exception as cleanup_error:
+                            logger.warning(f"Failed to cleanup collateral after loan creation failure: {str(cleanup_error)}")
                             pass
                         messages.error(request, 'Error creating loan record. Please try again.')
                         return redirect('borrower_dashboard')
