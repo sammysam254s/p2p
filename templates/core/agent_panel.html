@@ -388,7 +388,7 @@
 //     location.reload();
 // }, 30000);
 
-// Add confirmation dialog for verification
+// Add confirmation dialog for verification with anti-blinking measures
 document.addEventListener('DOMContentLoaded', function() {
     const verifyButtons = document.querySelectorAll('button[type="submit"]');
     verifyButtons.forEach(button => {
@@ -408,6 +408,38 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!confirm(`Confirm verification for ${borrowerName}?\n\nVerified Value: KES ${verifiedValue.toLocaleString()}\n\nThis action cannot be undone.`)) {
                 e.preventDefault();
             }
+        });
+    });
+    
+    // Add input validation with debouncing to prevent blinking
+    const verifiedValueInputs = document.querySelectorAll('input[name="verified_value"]');
+    verifiedValueInputs.forEach(input => {
+        let validationTimeout;
+        
+        // Use 'blur' event instead of 'input' to reduce frequency
+        input.addEventListener('blur', function() {
+            clearTimeout(validationTimeout);
+            validationTimeout = setTimeout(() => {
+                const value = parseFloat(this.value) || 0;
+                const form = this.closest('form');
+                const submitButton = form.querySelector('button[type="submit"]');
+                
+                // Use requestAnimationFrame for smooth updates
+                requestAnimationFrame(() => {
+                    if (value < 1000) {
+                        this.style.borderColor = '#dc3545';
+                        submitButton.disabled = true;
+                    } else {
+                        this.style.borderColor = '#198754';
+                        submitButton.disabled = false;
+                    }
+                });
+            }, 200);
+        });
+        
+        // Reset border on focus
+        input.addEventListener('focus', function() {
+            this.style.borderColor = '';
         });
     });
     

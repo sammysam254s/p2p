@@ -219,40 +219,65 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitButton = document.querySelector('button[type="submit"]');
     const checkboxes = document.querySelectorAll('.form-check-input');
     
-    // Real-time calculation update with debouncing to prevent blinking
+    // Real-time calculation update with proper debouncing to prevent blinking
     let updateTimeout;
-    verifiedValueInput.addEventListener('input', function() {
-        clearTimeout(updateTimeout);
-        updateTimeout = setTimeout(() => {
-            const value = parseFloat(this.value) || 0;
-            const devaluedAmount = value * 0.70;
-            const maxLoanAmount = devaluedAmount * 0.50;
-            
+    let lastValue = '';
+    
+    function updateCalculations() {
+        const currentValue = verifiedValueInput.value;
+        
+        // Only update if value actually changed to prevent unnecessary DOM updates
+        if (currentValue === lastValue) return;
+        lastValue = currentValue;
+        
+        const value = parseFloat(currentValue) || 0;
+        const devaluedAmount = value * 0.70;
+        const maxLoanAmount = devaluedAmount * 0.50;
+        
+        // Use requestAnimationFrame for smooth updates without blinking
+        requestAnimationFrame(() => {
             verifiedValueDisplay.textContent = `KES ${value.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             devaluedAmountDisplay.textContent = `KES ${devaluedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             maxLoanAmountDisplay.innerHTML = `<strong>KES ${maxLoanAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</strong>`;
-        }, 300); // 300ms delay to prevent excessive updates
+        });
+    }
+    
+    // Use 'blur' and 'change' events instead of 'input' to reduce frequency
+    verifiedValueInput.addEventListener('blur', updateCalculations);
+    verifiedValueInput.addEventListener('change', updateCalculations);
+    
+    // Optional: Still allow input updates but with longer debounce
+    verifiedValueInput.addEventListener('input', function() {
+        clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(updateCalculations, 800); // Increased to 800ms to reduce blinking
     });
     
-    // Checklist validation
+    // Checklist validation - also debounced
+    let validationTimeout;
     function updateSubmitButton() {
-        const checkedCount = document.querySelectorAll('.form-check-input:checked').length;
-        const verifiedValue = parseFloat(verifiedValueInput.value) || 0;
-        
-        if (checkedCount >= 4 && verifiedValue >= 1000) {
-            submitButton.disabled = false;
-            submitButton.className = 'btn btn-success btn-lg';
-        } else {
-            submitButton.disabled = true;
-            submitButton.className = 'btn btn-secondary btn-lg';
-        }
+        clearTimeout(validationTimeout);
+        validationTimeout = setTimeout(() => {
+            const checkedCount = document.querySelectorAll('.form-check-input:checked').length;
+            const verifiedValue = parseFloat(verifiedValueInput.value) || 0;
+            
+            requestAnimationFrame(() => {
+                if (checkedCount >= 4 && verifiedValue >= 1000) {
+                    submitButton.disabled = false;
+                    submitButton.className = 'btn btn-success btn-lg';
+                } else {
+                    submitButton.disabled = true;
+                    submitButton.className = 'btn btn-secondary btn-lg';
+                }
+            });
+        }, 200);
     }
     
     checkboxes.forEach(checkbox => {
         checkbox.addEventListener('change', updateSubmitButton);
     });
     
-    verifiedValueInput.addEventListener('input', updateSubmitButton);
+    verifiedValueInput.addEventListener('blur', updateSubmitButton);
+    verifiedValueInput.addEventListener('change', updateSubmitButton);
     
     // Initial state
     updateSubmitButton();
