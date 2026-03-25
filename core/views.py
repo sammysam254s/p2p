@@ -13,12 +13,14 @@ from .models import CustomUser, Collateral, Loan, Investment, WalletTransaction,
 from .forms import CustomUserCreationForm, CollateralForm, LoanApplicationForm, InvestmentForm, KYCVerificationForm, CollateralVerificationForm
 from .supabase_client import supabase
 from .services import supabase_service
+
+# Use simple KYC service instead of AI service
 try:
-    from .kyc_ai_service import kyc_ai_service
+    from .simple_kyc_service import simple_kyc_service
     KYC_SERVICE_AVAILABLE = True
 except ImportError:
     KYC_SERVICE_AVAILABLE = False
-    kyc_ai_service = None
+    simple_kyc_service = None
 
 try:
     from .pdf_service import pdf_generator
@@ -1148,12 +1150,12 @@ def kyc_verification(request):
                 
                 # Immediate automatic verification for faster processing
                 try:
-                    if KYC_SERVICE_AVAILABLE and kyc_ai_service:
-                        # Run AI verification immediately
-                        verification_result = kyc_ai_service.verify_kyc_submission(kyc)
-                        logger.info(f"KYC AI verification result for {request.user.username}: {verification_result}")
+                    if KYC_SERVICE_AVAILABLE and simple_kyc_service:
+                        # Run simple verification immediately
+                        verification_result = simple_kyc_service.verify_kyc_submission(kyc)
+                        logger.info(f"Simple KYC verification result for {request.user.username}: {verification_result}")
                     else:
-                        # Fast fallback verification when AI service is not available
+                        # Fast fallback verification when service is not available
                         # Check basic requirements: name and ID number must be provided
                         if kyc.full_name and kyc.id_number and len(kyc.id_number) >= 6:
                             verification_result = {
