@@ -14,24 +14,31 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  // Try to fetch custom role from users table
+  let user = null
   let role = ''
-  let username = user?.email || ''
-  
-  if (user) {
-    const { data } = await supabase
-      .from('users')
-      .select('role, username')
-      .eq('id', user.id)
-      .single()
-      
-    if (data) {
-      role = data.role
-      username = data.username
+  let username = ''
+
+  try {
+    const supabase = createClient()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    user = authUser
+
+    if (user) {
+      username = user.email || ''
+      const { data } = await supabase
+        .from('users')
+        .select('role, username')
+        .eq('id', user.id)
+        .single()
+        
+      if (data) {
+        role = data.role
+        username = data.username
+      }
     }
+  } catch (e) {
+    console.error('Layout auth error:', e)
+    // Continue rendering - user will just see the logged-out nav
   }
 
   return (
