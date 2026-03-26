@@ -4,47 +4,57 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 
 export async function login(formData: FormData) {
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
+  try {
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
 
-  const supabase = createClient()
-
-  // Find user by username or email. The original form used "username" but 
-  // Supabase Auth primariliy uses email. We'll try email first. If the user input
-  // doesn't have an @, we'll try to find the email by querying the `users` table by username.
-  let loginEmail = email
-  if (email && !email.includes('@')) {
-    const { data } = await supabase
-      .from('users')
-      .select('email')
-      .eq('username', email)
-      .single()
-    
-    if (data?.email) {
-      loginEmail = data.email
+    if (!email || !password) {
+      return redirect('/login?error=Email and password are required')
     }
+
+    const supabase = createClient()
+
+    let loginEmail = email
+    if (email && !email.includes('@')) {
+      const { data } = await supabase
+        .from('users')
+        .select('email')
+        .eq('username', email)
+        .single()
+      
+      if (data?.email) {
+        loginEmail = data.email
+      }
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail,
+      password,
+    })
+
+    if (error) {
+      return redirect('/login?error=' + encodeURIComponent(error.message || 'Authentication failed'))
+    }
+
+    // Redirect based on role (we fetch role from our custom users table)
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('email', loginEmail)
+      .single()
+
+    if (userData?.role === 'borrower') return redirect('/borrower')
+    if (userData?.role === 'lender') return redirect('/marketplace')
+    if (userData?.role === 'agent') return redirect('/agent')
+    if (userData?.role === 'admin') return redirect('/admin-dashboard')
+  } catch (err: any) {
+    // Next.js redirect() throws an error that we must rethrow
+    if (err?.digest && String(err.digest).startsWith('NEXT_REDIRECT')) {
+      throw err;
+    }
+    console.error("Unhandled login error:", err)
+    return redirect('/login?error=' + encodeURIComponent(err?.message || 'Server error occurred during login'))
   }
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email: loginEmail,
-    password,
-  })
-
-  if (error) {
-    return redirect('/login?error=Could not authenticate user')
-  }
-
-  // Redirect based on role (we fetch role from our custom users table)
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role')
-    .eq('email', loginEmail)
-    .single()
-
-  if (userData?.role === 'borrower') return redirect('/borrower')
-  if (userData?.role === 'lender') return redirect('/marketplace')
-  if (userData?.role === 'agent') return redirect('/agent')
-  if (userData?.role === 'admin') return redirect('/admin-dashboard')
   
   return redirect('/')
 }

@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { submitKyc } from './actions'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 export default async function KycPage({
   searchParams
@@ -148,9 +149,9 @@ export default async function KycPage({
                   </div>
 
                   <div className="d-grid">
-                    <button type="submit" className="btn btn-primary btn-lg shadow-sm fw-bold">
+                    <SubmitButton className="btn btn-primary btn-lg shadow-sm fw-bold" loadingText="Submitting...">
                       <i className="fas fa-check me-2"></i>Submit for Verification
-                    </button>
+                    </SubmitButton>
                   </div>
                 </form>
               </div>

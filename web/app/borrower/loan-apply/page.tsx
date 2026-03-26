@@ -1,6 +1,7 @@
 import { applyForLoan } from '@/app/borrower/actions'
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 export default async function LoanApplyPage({
   searchParams
@@ -95,7 +96,7 @@ export default async function LoanApplyPage({
 
               <div className="d-grid gap-2 d-md-flex justify-content-md-end">
                 <a href="/borrower" className="btn btn-light px-4 me-md-2">Cancel</a>
-                <button type="submit" className="btn btn-primary px-5 shadow-sm">Submit Application</button>
+                <SubmitButton className="btn btn-primary px-5 shadow-sm" loadingText="Submitting...">Submit Application</SubmitButton>
               </div>
             </form>
           </div>

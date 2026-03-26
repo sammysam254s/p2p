@@ -1,4 +1,5 @@
 import { signup } from '@/app/auth/actions'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 export default function RegisterPage({
   searchParams,
@@ -89,9 +90,9 @@ export default function RegisterPage({
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary w-100 mb-3">
+              <SubmitButton className="btn btn-primary w-100 mb-3" loadingText="Creating Account...">
                 <i className="fas fa-user-plus me-2"></i>Create Account
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="text-center">

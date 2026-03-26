@@ -1,4 +1,5 @@
 import { login } from '@/app/auth/actions'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 export default function LoginPage({
   searchParams,
@@ -59,9 +60,9 @@ export default function LoginPage({
                 </div>
               </div>
 
-              <button type="submit" className="btn btn-primary w-100 mb-3">
+              <SubmitButton className="btn btn-primary w-100 mb-3" loadingText="Signing In...">
                 <i className="fas fa-sign-in-alt me-2"></i>Sign In
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="text-center">
